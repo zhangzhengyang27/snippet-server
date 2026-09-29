@@ -1,7 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { AuthService } from './modules/auth/auth.service';
 
 const INSECURE_JWT_SECRETS = [
   'your-jwt-secret-key-change-in-production',
@@ -24,7 +23,7 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',')
-      : ['http://localhost:5555'],
+      : ['http://localhost:5556'],
     credentials: true,
   });
 
@@ -41,10 +40,6 @@ async function bootstrap() {
   if (process.env.NODE_ENV === 'production' && !process.env.DB_PASSWORD) {
     throw new Error('生产环境必须设置 DB_PASSWORD 环境变量');
   }
-
-  // 创建默认管理员
-  const authService = app.get(AuthService);
-  await authService.createDefaultAdmin();
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
