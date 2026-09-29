@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { FavoritesService } from './favorites.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RequireAuthGuard } from '../auth/guards/require-auth.guard';
 
 interface AddFavoriteDto {
   exampleId: string;
@@ -22,7 +22,7 @@ interface AuthenticatedRequest extends Request {
 }
 
 @Controller('api/favorites')
-@UseGuards(JwtAuthGuard)
+@UseGuards(RequireAuthGuard)
 export class FavoritesController {
   constructor(private readonly favoritesService: FavoritesService) {}
 

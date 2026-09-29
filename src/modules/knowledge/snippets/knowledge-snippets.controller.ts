@@ -171,16 +171,16 @@ export class KnowledgeSnippetsController {
      payload.collectionId ?? null
    )
  }
-}
-175
+
+  // ── 批量操作（8/30 页面契约） ──
 
   @Post('batch/tag')
-  async batchAddTag(@Body() body: { ids: string[]; tag: string }) {
-    return this.examplesService.batchAddTag(body.ids, body.tag);
+  async batchAddTag(@Req() request: AuthedRequest, @Body() body: { ids: string[]; tag: string }) {
+    return this.knowledgeSnippetsService.batchAddTag(request.user!.userId, body.ids, body.tag)
   }
 
   @Post('batch/delete')
-  async batchDelete(@Body() body: { ids: string[] }) {
-    return this.examplesService.batchDelete(body.ids);
+  async batchDelete(@Req() request: AuthedRequest, @Body() body: { ids: string[] }) {
+    return this.knowledgeSnippetsService.batchDelete(request.user!.userId, body.ids)
   }
-	
+}

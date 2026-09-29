@@ -25,7 +25,8 @@ export class Example {
   @Column({ name: 'topic_slug', type: 'varchar', length: 80, default: 'general' })
   topicSlug!: string;
 
-  @Column({ type: 'jsonb', default: [] })
+  /** 旧库为 text[]（PostgreSQL 原生数组），非 jsonb */
+  @Column({ type: 'text', array: true, default: [] })
   tags!: string[];
 
   @Column({ type: 'varchar', length: 40, default: 'html' })

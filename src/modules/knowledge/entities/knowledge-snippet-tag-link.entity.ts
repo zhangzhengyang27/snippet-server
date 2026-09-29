@@ -29,5 +29,3 @@ export class KnowledgeSnippetTagLink {
   @JoinColumn({ name: 'tag_id' })
   tag!: KnowledgeSnippetTag
 }
-23:  userId!: string | null
-29:  /** 是否为公共片段：公共片段不归属用户（userId 为 NULL），对未登录用户只读可见 */

@@ -9,7 +9,7 @@ export class Favorite {
   id!: string;
 
   @Index()
-  @Column({ name: 'user_id', type: 'uuid' })
+  @Column({ name: 'user_id', type: 'varchar', length: 64 })
   userId!: string;
 
   @Index()

@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: snippet-pg
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root1234
+      POSTGRES_DB: html5_examples
+    ports:
+      - '5433:5432'
+    volumes:
+      - snippet_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  snippet_pgdata:

@@ -1,82 +1,30 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
-import { Topic } from './src/modules/topics/entities/topic.entity';
-import { Category } from './src/modules/categories/entities/category.entity';
+import { User } from './src/modules/auth/entities/user.entity';
 import { Example } from './src/modules/examples/entities/example.entity';
 import { Favorite } from './src/modules/favorites/entities/favorite.entity';
-import { StaticSiteNav } from './src/modules/static-site-nav/entities/static-site-nav.entity';
-import { UiElementTemplate } from './src/modules/ui-elements/entities/ui-element-template.entity';
-import { UiElementCategory } from './src/modules/ui-elements/entities/ui-element-category.entity';
-import { VisualDemo } from './src/modules/visual-demos/entities/visual-demo.entity';
-import { ChartExample } from './src/modules/chart-examples/entities/chart-example.entity';
-import { User } from './src/modules/auth/entities/user.entity';
-import {
-  KnowledgeBase,
-  KnowledgeDocument,
-  DocumentVersion,
-  DocumentShare,
-  RecentView,
-  KnowledgeFavorite,
-  Comment,
-  Notification,
-  DriveFile,
-  DriveFileVersion,
-  DriveFileShare,
-  DriveUploadSession,
-  DriveQuota,
-  DriveArchiveTask,
-  SnippetCollection,
-  KnowledgeSnippet,
-  KnowledgeSnippetTag,
-  KnowledgeSnippetTagLink,
-  BoardLibrary,
-  BoardLibraryAsset,
-  RefreshToken,
-  CaptchaChallenge,
-} from './src/modules/knowledge/entities';
+import { SnippetCollection } from './src/modules/knowledge/entities/snippet-collection.entity';
+import { KnowledgeSnippet } from './src/modules/knowledge/entities/knowledge-snippet.entity';
+import { KnowledgeSnippetTag } from './src/modules/knowledge/entities/knowledge-snippet-tag.entity';
+import { KnowledgeSnippetTagLink } from './src/modules/knowledge/entities/knowledge-snippet-tag-link.entity';
 
+/** TypeORM CLI / 种子脚本使用的数据源（与 app.module 的注册保持一致）。 */
 export default new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
   username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'html5_examples',
   entities: [
-    Topic,
-    Category,
+    User,
     Example,
     Favorite,
-    StaticSiteNav,
-    UiElementTemplate,
-    UiElementCategory,
-    VisualDemo,
-    ChartExample,
-    User,
-    KnowledgeBase,
-    KnowledgeDocument,
-    DocumentVersion,
-    DocumentShare,
-    RecentView,
-    KnowledgeFavorite,
-    Comment,
-    Notification,
-    DriveFile,
-    DriveFileVersion,
-    DriveFileShare,
-    DriveUploadSession,
-    DriveQuota,
-    DriveArchiveTask,
     SnippetCollection,
     KnowledgeSnippet,
     KnowledgeSnippetTag,
     KnowledgeSnippetTagLink,
-    BoardLibrary,
-    BoardLibraryAsset,
-    RefreshToken,
-    CaptchaChallenge,
   ],
-  migrations: ['src/migrations/*.ts'],
-  synchronize: false,
+  synchronize: process.env.DB_SYNC === 'true',
   logging: process.env.NODE_ENV === 'development',
 });
