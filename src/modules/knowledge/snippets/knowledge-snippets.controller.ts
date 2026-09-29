@@ -175,11 +175,13 @@ export class KnowledgeSnippetsController {
   // ── 批量操作（8/30 页面契约） ──
 
   @Post('batch/tag')
+  @UseGuards(RequireAuthGuard)
   async batchAddTag(@Req() request: AuthedRequest, @Body() body: { ids: string[]; tag: string }) {
     return this.knowledgeSnippetsService.batchAddTag(request.user!.userId, body.ids, body.tag)
   }
 
   @Post('batch/delete')
+  @UseGuards(RequireAuthGuard)
   async batchDelete(@Req() request: AuthedRequest, @Body() body: { ids: string[] }) {
     return this.knowledgeSnippetsService.batchDelete(request.user!.userId, body.ids)
   }

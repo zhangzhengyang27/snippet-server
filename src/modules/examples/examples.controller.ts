@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ExamplesService } from './examples.service';
 import { Example } from './entities/example.entity';
 import { Public } from '../auth/decorators/public.decorator';
+import { RequireAuthGuard } from '../auth/guards/require-auth.guard';
 
 @Controller('api/examples')
 export class ExamplesController {
@@ -37,16 +38,19 @@ export class ExamplesController {
  }
 
  @Post()
+ @UseGuards(RequireAuthGuard)
  async create(@Body() exampleData: Partial<Example>) {
    return this.examplesService.create(exampleData);
  }
 
  @Patch(':id')
+ @UseGuards(RequireAuthGuard)
  async update(@Param('id') id: string, @Body() exampleData: Partial<Example>) {
    return this.examplesService.update(id, exampleData);
  }
 
  @Delete(':id')
+ @UseGuards(RequireAuthGuard)
  async remove(@Param('id') id: string) {   return this.examplesService.remove(id);
  }
 }

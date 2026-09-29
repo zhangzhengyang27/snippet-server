@@ -39,6 +39,12 @@ export class FavoritesService {
       throw new NotFoundException(`示例 ${exampleId} 不存在`);
     }
 
+    // 幂等：重复收藏（双击/并发）直接返回现有记录，避免唯一约束 500
+    const existing = await this.favoriteRepository.findOne({ where: { userId, exampleId } });
+    if (existing) {
+      return existing;
+    }
+
     const favorite = this.favoriteRepository.create({ userId, exampleId });
     return this.favoriteRepository.save(favorite);
   }

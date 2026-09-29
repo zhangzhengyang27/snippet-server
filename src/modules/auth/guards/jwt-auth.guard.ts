@@ -34,9 +34,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (noCredentials) {
       return undefined as TUser;
     }
-    // 有凭证但校验失败，或 passport 内部错误：照常 401
+    // 有凭证但校验失败，或 passport 内部错误：照常 401（HttpException 才能正确映射，避免 500）
     if (err || !user) {
-      throw err || info || new UnauthorizedException('认证失败');
+      const message = (err as Error)?.message || info?.message || '认证失败';
+      throw new UnauthorizedException(message);
     }
     return user as TUser;
   }

@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer'
+import { Transform, Type } from 'class-transformer'
 import {
  IsArray,
  IsBoolean,
@@ -95,7 +95,7 @@ export class UpdateKnowledgeSnippetDto {
  tags?: string[]
 
  @IsOptional()
- @Type(() => Boolean)
+ @Transform(({ value }) => (value === 'false' ? false : Boolean(value)))
  @IsBoolean()
  favorite?: boolean
 
@@ -166,7 +166,7 @@ export class ListKnowledgeSnippetsDto {
  language?: string
 
  @IsOptional()
- @Type(() => Boolean)
+ @Transform(({ value }) => (value === 'false' ? false : Boolean(value)))
  @IsBoolean()
  favorite?: boolean
 

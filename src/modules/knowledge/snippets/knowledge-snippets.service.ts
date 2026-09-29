@@ -926,11 +926,11 @@ export class KnowledgeSnippetsService {
     const snippets = await this.snippetRepo.find({ where: { id: In(ids) } })
     const owned = snippets.filter((item) => item.userId === userId)
     for (const snippet of owned) {
-      await this.dataSource.transaction((manager) =>
-        this.syncSnippetTags(manager, userId, snippet.id, [
-          tag,
-        ])
-      )
+      // batch 语义是「追加」而非整体重设：先读现有标签再合并去重，避免清空旧标签
+      const existing = await this.snippetTagNames(snippet.id)
+      const merged = [...new Set([...existing, tag])]
+      if (merged.length === existing.length) continue
+      await this.dataSource.transaction((manager) => this.syncSnippetTags(manager, userId, snippet.id, merged))
     }
     const ownedIds = new Set(owned.map((item) => item.id))
     return { updated: owned.length, missing: ids.filter((id) => !ownedIds.has(id)) }
