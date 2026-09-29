@@ -23,7 +23,7 @@ export class AuthController {
   @Public()
   @UseGuards(new RateLimitGuard(5, 60_000))
   async login(
-    @Body() loginDto: { username: string; password: string },
+    @Body() loginDto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(loginDto.username, loginDto.password);

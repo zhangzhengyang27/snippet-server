@@ -13,6 +13,8 @@ import {
 import type { Request } from 'express'
 import { RequireAuthGuard } from '../../auth/guards/require-auth.guard'
 import {
+ BatchAddTagDto,
+ BatchDeleteDto,
  CreateKnowledgeSnippetDto,
  CreateSnippetCollectionDto,
  CopySnippetDto,
@@ -176,13 +178,13 @@ export class KnowledgeSnippetsController {
 
   @Post('batch/tag')
   @UseGuards(RequireAuthGuard)
-  async batchAddTag(@Req() request: AuthedRequest, @Body() body: { ids: string[]; tag: string }) {
+  async batchAddTag(@Req() request: AuthedRequest, @Body() body: BatchAddTagDto) {
     return this.knowledgeSnippetsService.batchAddTag(request.user!.userId, body.ids, body.tag)
   }
 
   @Post('batch/delete')
   @UseGuards(RequireAuthGuard)
-  async batchDelete(@Req() request: AuthedRequest, @Body() body: { ids: string[] }) {
+  async batchDelete(@Req() request: AuthedRequest, @Body() body: BatchDeleteDto) {
     return this.knowledgeSnippetsService.batchDelete(request.user!.userId, body.ids)
   }
 }

@@ -6,15 +6,23 @@ import {
   Param,
   Body,
   Req,
-  BadRequestException,
   UseGuards,
 } from '@nestjs/common';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { Request } from 'express';
 import { FavoritesService } from './favorites.service';
 import { RequireAuthGuard } from '../auth/guards/require-auth.guard';
 
-interface AddFavoriteDto {
-  exampleId: string;
+/**
+ * 收藏示例的请求体。
+ *
+ * 必须是 class：全局 ValidationPipe 依赖 emitDecoratorMetadata 推断类型，
+ * interface 不产生运行时元数据，metatype 会退化为 Object 从而静默跳过校验。
+ */
+class AddFavoriteDto {
+  @IsString()
+  @IsNotEmpty({ message: 'exampleId 不能为空' })
+  exampleId!: string;
 }
 
 interface AuthenticatedRequest extends Request {
@@ -34,9 +42,7 @@ export class FavoritesController {
 
   @Post()
   async add(@Body() dto: AddFavoriteDto, @Req() req: AuthenticatedRequest) {
-    if (!dto.exampleId) {
-      throw new BadRequestException('exampleId 不能为空');
-    }
+    // 空值校验由全局 ValidationPipe 依 AddFavoriteDto 完成
     return this.favoritesService.add(req.user.userId, dto.exampleId);
   }
 

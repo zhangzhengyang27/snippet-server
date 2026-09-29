@@ -1,8 +1,10 @@
 import { Transform, Type } from 'class-transformer'
 import {
+ ArrayNotEmpty,
  IsArray,
  IsBoolean,
  IsInt,
+ IsNotEmpty,
  IsObject,
  IsOptional,
  IsString,
@@ -179,4 +181,25 @@ export class ListKnowledgeSnippetsDto {
 
  @IsOptional()
  pageSize?: number
+}
+
+/** 批量打标签：ids 为目标片段 id 列表，tag 为要追加的标签名。 */
+export class BatchAddTagDto {
+ @IsArray()
+ @ArrayNotEmpty()
+ @IsString({ each: true })
+ ids!: string[]
+
+ @IsString()
+ @IsNotEmpty()
+ @MaxLength(40)
+ tag!: string
+}
+
+/** 批量删除片段。 */
+export class BatchDeleteDto {
+ @IsArray()
+ @ArrayNotEmpty()
+ @IsString({ each: true })
+ ids!: string[]
 }
