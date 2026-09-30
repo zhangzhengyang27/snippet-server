@@ -12,6 +12,7 @@ import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
 import { RateLimitGuard } from './guards/rate-limit.guard';
+import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
 import { LoginDto } from '../../common/dtos';
 
 @Controller('api/auth')
@@ -21,7 +22,8 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Public()
-  @UseGuards(new RateLimitGuard(5, 60_000))
+  @RateLimit({ max: 5, windowMs: 60_000 })
+  @UseGuards(RateLimitGuard)
   async login(
     @Body() loginDto: LoginDto,
     @Res({ passthrough: true }) res: Response,

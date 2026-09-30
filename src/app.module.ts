@@ -16,6 +16,7 @@ import { ExamplesModule } from './modules/examples/examples.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { KnowledgeSnippetsModule } from './modules/knowledge/snippets/knowledge-snippets.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 
 /**
  * Snippet 后端（html5-examples server 的裁剪装配版）：
@@ -62,6 +63,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     ExamplesModule,
     FavoritesModule,
     KnowledgeSnippetsModule,
+    RateLimitModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
