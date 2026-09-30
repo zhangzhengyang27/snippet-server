@@ -769,6 +769,9 @@ export class KnowledgeSnippetsService {
 
       await this.syncSnippetTags(manager, userId, snippet.id, tagNames)
 
+      // 版本历史：创建时写入首个快照（与片段同事务，避免正文与历史不一致）
+      await this.snippetVersionService.writeSnapshot(manager, snippet, userId, 'create')
+
       return snippet
     })
 
@@ -806,17 +809,21 @@ export class KnowledgeSnippetsService {
     const favorite = payload.favorite !== undefined ? Boolean(payload.favorite) : current.favorite
     const tagNames = payload.tags !== undefined ? normalizeTagNames(payload.tags) : undefined
 
+    // 提取成局部变量：既要用于 update，也要用于写版本快照，避免两处表达式各写一遍
+    const nextName = payload.name ?? current.name
+    const nextDescription =
+      payload.description !== undefined
+        ? normalizeDescription(payload.description)
+        : current.description
+
     await this.dataSource.transaction(async manager => {
       const snippetRepository = manager.getRepository(KnowledgeSnippet)
 
       await snippetRepository.update(
         { id },
         {
-          name: payload.name ?? current.name,
-          description:
-            payload.description !== undefined
-              ? normalizeDescription(payload.description)
-              : current.description,
+          name: nextName,
+          description: nextDescription,
           language,
           collectionId: nextCollectionId,
           content,
@@ -829,6 +836,22 @@ export class KnowledgeSnippetsService {
       if (tagNames !== undefined) {
         await this.syncSnippetTags(manager, userId, id, tagNames)
       }
+
+      // 版本历史：写入「更新后」的快照（与片段同事务）。
+      // 因此回滚到这一版 = 回到这次更新的结果。
+      await this.snippetVersionService.writeSnapshot(
+        manager,
+        {
+          id,
+          name: nextName,
+          description: nextDescription,
+          language,
+          content,
+          displayAttrs: displayAttrs as unknown as Record<string, unknown>,
+        },
+        userId,
+        'update',
+      )
     })
 
     return this.getSnippet(userId, id)
@@ -907,11 +930,11 @@ export class KnowledgeSnippetsService {
     return this.getSnippet(userId, created.id)
   }
 
-  // ── 版本历史（8/30 前端契约：委托 SnippetVersionService，当前返回空集） ──
+  // ── 版本历史 ──
 
   async listSnippetVersions(userId: string, snippetId: string, page = 1, pageSize = 30) {
     await this.ensureSnippetOwned(userId, snippetId)
-    return this.snippetVersionService.listVersions(snippetId)
+    return this.snippetVersionService.listVersions(snippetId, page, pageSize)
   }
 
   async getSnippetVersion(userId: string, snippetId: string, versionId: string) {
@@ -926,7 +949,7 @@ export class KnowledgeSnippetsService {
 
   async rollbackSnippetVersion(userId: string, snippetId: string, versionId: string) {
     await this.ensureSnippetOwned(userId, snippetId)
-    return this.snippetVersionService.rollback(snippetId, versionId)
+    return this.snippetVersionService.rollback(userId, snippetId, versionId)
   }
 
   // ── 批量操作（8/30 页面契约：批量打标 / 批量删除） ──

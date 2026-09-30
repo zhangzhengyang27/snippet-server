@@ -10,6 +10,7 @@ import { SnippetCollection } from './modules/knowledge/entities/snippet-collecti
 import { KnowledgeSnippet } from './modules/knowledge/entities/knowledge-snippet.entity';
 import { KnowledgeSnippetTag } from './modules/knowledge/entities/knowledge-snippet-tag.entity';
 import { KnowledgeSnippetTagLink } from './modules/knowledge/entities/knowledge-snippet-tag-link.entity';
+import { SnippetVersion } from './modules/knowledge/entities/snippet-version.entity';
 import { AuthModule } from './modules/auth/auth.module';
 import { ExamplesModule } from './modules/examples/examples.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
@@ -39,6 +40,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
         KnowledgeSnippet,
         KnowledgeSnippetTag,
         KnowledgeSnippetTagLink,
+        SnippetVersion,
       ],
       synchronize: process.env.DB_SYNC === 'true',
       logging: process.env.NODE_ENV === 'development',

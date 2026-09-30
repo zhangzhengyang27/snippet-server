@@ -7,6 +7,7 @@ import { SnippetCollection } from './modules/knowledge/entities/snippet-collecti
 import { KnowledgeSnippet } from './modules/knowledge/entities/knowledge-snippet.entity';
 import { KnowledgeSnippetTag } from './modules/knowledge/entities/knowledge-snippet-tag.entity';
 import { KnowledgeSnippetTagLink } from './modules/knowledge/entities/knowledge-snippet-tag-link.entity';
+import { SnippetVersion } from './modules/knowledge/entities/snippet-version.entity';
 
 /** TypeORM CLI / 种子脚本使用的数据源（与 app.module 的注册保持一致）。 */
 export default new DataSource({
@@ -24,6 +25,7 @@ export default new DataSource({
     KnowledgeSnippet,
     KnowledgeSnippetTag,
     KnowledgeSnippetTagLink,
+    SnippetVersion,
   ],
   synchronize: process.env.DB_SYNC === 'true',
   logging: process.env.NODE_ENV === 'development',

@@ -7,6 +7,7 @@ import { KnowledgeSnippet } from '../entities/knowledge-snippet.entity';
 import { SnippetCollection } from '../entities/snippet-collection.entity';
 import { KnowledgeSnippetTag } from '../entities/knowledge-snippet-tag.entity';
 import { KnowledgeSnippetTagLink } from '../entities/knowledge-snippet-tag-link.entity';
+import { SnippetVersion } from '../entities/snippet-version.entity';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { KnowledgeSnippetTagLink } from '../entities/knowledge-snippet-tag-link.
       SnippetCollection,
       KnowledgeSnippetTag,
       KnowledgeSnippetTagLink,
+      SnippetVersion,
     ]),
   ],
   controllers: [KnowledgeSnippetsController],
