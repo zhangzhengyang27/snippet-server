@@ -12,12 +12,14 @@
 --
 --  ⚠️ 一处需要更正的说法（2026-09-30 实测）
 --    本脚本与 entity 的注释此前都写着「公共标签（user_id IS NULL）仍可重名 ——
---    正是期望行为」。**实际上数据库里 user_id 是 NOT NULL**（实体声明
+--    正是期望行为」。**实际上数据库里 user_id 是 NOT NULL**（实体当时误声明为
 --    nullable: true，与库不一致），而 syncSnippetTags 的 userId 形参类型就是
 --    string、所有调用点都来自已认证请求 —— 也就是说**「user_id IS NULL 的公共
 --    标签」这条路径在当前代码里不存在**。复合索引依然是对的（按用户隔离），
 --    但理由不是 NULL 语义，而是「标签本来就按 user_id 隔离」。
---    entity 的 nullable 与库的 NOT NULL 属未对齐项，见评审报告待决策。
+--
+--    实体侧已对齐：`KnowledgeSnippetTag.userId` 改为 NOT NULL（与库一致），
+--    至此该字段在实体与库之间不再有分歧。
 --
 --  为什么必须显式执行本脚本
 --    仓库没有 migrations 目录，schema 由 synchronize 维护，而 synchronize 只在

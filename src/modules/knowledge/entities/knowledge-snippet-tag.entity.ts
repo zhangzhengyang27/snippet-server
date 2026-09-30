@@ -12,11 +12,10 @@ import { KnowledgeSnippetTagLink } from './knowledge-snippet-tag-link.entity';
  *
  * 索引名显式指定，与 scripts/fix-tag-unique-index.sql 保持一致。
  *
- * ⚠️ 与库的未对齐项（2026-09-30 实测发现）：
- * 下面的 `userId` 声明为 `nullable: true`，但**库中该列实际是 NOT NULL**。
- * 且 `syncSnippetTags` 的 userId 形参类型就是 `string`，所有调用点都来自已认证
- * 请求 —— 「user_id IS NULL 的公共标签」这条路径在当前代码里并不存在。
- * 二者需要择一对齐（改实体或改库），属产品决策，暂未擅自改动。
+ * `userId` 为 **NOT NULL**：标签一律归属于创建它的用户。此前实体误声明为
+ * `nullable: true`，而库中一直是 NOT NULL —— 已对齐为实体与库一致
+ * （`syncSnippetTags` 的 userId 形参类型本就是 `string`，所有调用点都来自
+ * 已认证请求，不存在 userId 为空的标签）。
  */
 @Entity('ui_knowledge_snippet_tags')
 @Index('uq_knowledge_snippet_tags_user_name', ['userId', 'name'], { unique: true })
@@ -28,10 +27,10 @@ export class KnowledgeSnippetTag {
   @Column({ type: 'varchar', length: 60 })
   name!: string;
 
-  /** 标签归属用户（库中为 NOT NULL，见类注释的未对齐项） */
+  /** 标签归属用户（NOT NULL，与库一致） */
   @Index()
-  @Column({ name: 'user_id', type: 'uuid', nullable: true })
-  userId!: string | null;
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId!: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
