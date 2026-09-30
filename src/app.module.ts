@@ -42,6 +42,19 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
       ],
       synchronize: process.env.DB_SYNC === 'true',
       logging: process.env.NODE_ENV === 'development',
+      /**
+       * 迁移配置（与 data-source.ts 保持一致）。
+       *
+       * `migrationsRun: false` 是刻意的：迁移由开发者**显式执行**
+       * （`npm run migration:run`），不在应用启动时自动跑 —— 避免多实例部署时
+       * 并发执行 DDL，也避免一次误重启就改了库。
+       *
+       * 基线迁移已在现有库登记为已应用，详见
+       * `src/migrations/1790751735731-Baseline.ts`。
+       */
+      migrations: [__dirname + '/migrations/*{.ts,.js}'],
+      migrationsTableName: 'migrations',
+      migrationsRun: false,
     }),
     AuthModule,
     ExamplesModule,
