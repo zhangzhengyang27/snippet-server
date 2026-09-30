@@ -167,6 +167,21 @@ export class ListKnowledgeSnippetsDto {
  @IsString()
  language?: string
 
+ /**
+  * 按 id 批量查询（逗号分隔的字符串，如 `?ids=a,b,c`）。
+  *
+  * 用于「最近浏览」这类**先有 id 列表、再取详情**的场景，把 N 次回查压成 1 次。
+  * 必须声明在 DTO 里 —— controller 用的是 class DTO + 全局
+  * `forbidNonWhitelisted`，未声明的查询参数会直接被 400 拒绝。
+  */
+ @IsOptional()
+ @Transform(({ value }) =>
+   typeof value === 'string' ? value.split(',').map((s) => s.trim()).filter(Boolean) : value
+ )
+ @IsArray()
+ @IsString({ each: true })
+ ids?: string[]
+
  @IsOptional()
  @Transform(({ value }) => (value === 'false' ? false : Boolean(value)))
  @IsBoolean()

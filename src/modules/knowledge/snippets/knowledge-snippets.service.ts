@@ -660,6 +660,12 @@ export class KnowledgeSnippetsService {
       qb.andWhere('snippet.favorite = :favorite', { favorite: query.favorite })
     }
 
+    // 按 id 批量取详情（「最近浏览」等先有 id 列表的场景），把前端的 N 次回查压成 1 次。
+    // 可见性约束仍由上面的 where 保证 —— 拿不到无权访问的片段。
+    if (query.ids?.length) {
+      qb.andWhere('snippet.id IN (:...ids)', { ids: query.ids })
+    }
+
     if (query.tag?.trim()) {
       qb.andWhere(
         `EXISTS (
@@ -699,7 +705,11 @@ export class KnowledgeSnippetsService {
       qb.addOrderBy('snippet.updatedAt', 'DESC')
     }
 
-    qb.skip((page - 1) * pageSize).take(pageSize)
+    // 指定 ids 时**不套分页**：这是一次「就要这些」的精确请求，
+    // 套上 pageSize 只会造成静默截断（pageSize 上限 100，而 id 列表可能更长）。
+    if (!query.ids?.length) {
+      qb.skip((page - 1) * pageSize).take(pageSize)
+    }
 
     const [items, total] = await qb.getManyAndCount()
 
