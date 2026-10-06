@@ -8,7 +8,7 @@
  *
  * 运行：cd server && npx ts-node -r reflect-metadata -r tsconfig-paths/register scripts/reparent-js-handwritten.ts
  */
-import dataSource from '../data-source'
+import dataSource from '../src/data-source'
 import { IsNull } from 'typeorm'
 import { SnippetCollection } from '../src/modules/knowledge/entities/snippet-collection.entity'
 import { KnowledgeSnippet } from '../src/modules/knowledge/entities/knowledge-snippet.entity'

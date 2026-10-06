@@ -1,7 +1,7 @@
 /**
  * 将「最全 JS 手写题」整理进「代码块」页面（/snippets）的前端公共集合。
  *
- * 实现方式：直接通过 server/data-source.ts 写库（无需启动 HTTP Server、无需鉴权）。
+ * 实现方式：直接通过 server/src/data-source.ts 写库（无需启动 HTTP Server、无需鉴权）。
  * 写入的集合与片段均为「公共」：userId = NULL, isPublic = true，
  * 因此未登录用户在代码块页面也以只读方式可见 —— 即「前端集合」。
  * 结构：挂在已有的「前端」一级集合下作为二级集合（前端 → JS 手写题 / 设计模式），
@@ -17,7 +17,7 @@
  */
 import fs from 'fs'
 import path from 'path'
-import dataSource from '../data-source'
+import dataSource from '../src/data-source'
 import { generateId } from '../src/common/utils/id.util'
 import { normalizeSnippetDisplayAttrs } from '../src/modules/knowledge/snippets/snippet-display.util'
 import { IsNull } from 'typeorm'
