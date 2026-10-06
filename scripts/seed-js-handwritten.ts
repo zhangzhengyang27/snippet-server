@@ -23,6 +23,11 @@ import { normalizeSnippetDisplayAttrs } from '../src/modules/knowledge/snippets/
 import { IsNull } from 'typeorm'
 import { SnippetCollection } from '../src/modules/knowledge/entities/snippet-collection.entity'
 import { KnowledgeSnippet } from '../src/modules/knowledge/entities/knowledge-snippet.entity'
+import { resolvePublicOwner } from './public-owner'
+import {
+  checkSnippetMetadata,
+  formatIssues,
+} from '../src/modules/knowledge/snippets/snippet-metadata.util'
 
 // ── 修正版代码（仅对确有 bug / 不规范处替换）───────────────────────────────
 
@@ -589,6 +594,10 @@ async function main() {
   const collRepo = dataSource.getRepository(SnippetCollection)
   const snipRepo = dataSource.getRepository(KnowledgeSnippet)
 
+  // 公共片段统一挂在托管账号下，不再写 NULL 归属
+  const publicOwner = await resolvePublicOwner(dataSource)
+  console.log(`公共片段托管账号：${publicOwner.username} (${publicOwner.id})`)
+
   const upsertCollection = async (name: string, parentId: string | null, order: number) => {
     const existing = await collRepo.findOne({
       where: { name, parentId: parentId ? parentId : IsNull(), isPublic: true },
@@ -605,6 +614,11 @@ async function main() {
     return collRepo.save(created)
   }
 
+  // 语义闸门：标题/描述不达标的片段直接跳过，绝不写库。
+  // 当初 3399 条脏数据就是这么进来的（`description = enrich?.description || ''` 留了空壳），
+  // 这里是唯一写入口，必须拦住同类问题复发。
+  const metadataIssues: string[] = []
+
   const upsertSnippet = async (
     collectionId: string,
     name: string,
@@ -612,6 +626,11 @@ async function main() {
     content: string,
     description: string,
   ) => {
+    const issues = checkSnippetMetadata({ name, description })
+    if (issues.length > 0) {
+      metadataIssues.push(`${name} → ${formatIssues(issues)}`)
+      return null
+    }
     const existing = await snipRepo.findOne({ where: { name, collectionId, isPublic: true } })
     const displayAttrs = normalizeSnippetDisplayAttrs({ language })
     if (existing) {
@@ -619,11 +638,11 @@ async function main() {
       existing.content = content
       existing.description = description
       existing.displayAttrs = displayAttrs as unknown as Record<string, unknown>
-      return snipRepo.save(existing)
+      return snipRepo.save(existing) as Promise<KnowledgeSnippet>
     }
     const created = snipRepo.create({
       id: generateId(),
-      userId: null,
+      userId: publicOwner.id,
       collectionId,
       isPublic: true,
       name,
@@ -675,15 +694,58 @@ async function main() {
         const language = LANG_MAP[block.language] || 'javascript'
         const content = enrich?.improved ?? block.code
         const description = enrich?.description || ''
-        await upsertSnippet(top.id, title, language, content, description)
-        snippetCount++
-        console.log(`  ├─ 片段：${title}`)
+        const saved = await upsertSnippet(top.id, title, language, content, description)
+        if (saved) snippetCount++
+        console.log(saved ? `  ├─ 片段：${title}` : `  ├─ 跳过（语义不达标）：${title}`)
       }
     }
   }
 
   console.log(`\n✅ 完成：新增/更新集合 ${collectionCount} 个，片段 ${snippetCount} 个`)
+  if (metadataIssues.length > 0) {
+    console.error(`\n⚠️ 语义闸门拦下 ${metadataIssues.length} 条未写入（标题/描述不达标）：`)
+    for (const item of metadataIssues.slice(0, 20)) console.error(`  - ${item}`)
+    if (metadataIssues.length > 20) console.error(`  ... 另有 ${metadataIssues.length - 20} 条`)
+    process.exitCode = 1
+  }
   await dataSource.destroy()
+}
+
+/**
+ * `--check` 预演：不连库、不写库，只按同一套闸门把 seed 数据跑一遍，
+ * 回答「真跑的时候会有多少条被拦下」。有违规时以退出码 1 结束，可挂 CI。
+ */
+if (process.argv.includes('--check')) {
+  type SeedNode = {
+    name: string
+    codeBlocks: Array<{ language: string; code: string }>
+    children: unknown[]
+  }
+  const flatten = (nodes: SeedNode[]): SeedNode[] =>
+    nodes.flatMap((node) =>
+      node.codeBlocks.length > 0 ? [node] : flatten((node.children as SeedNode[]) ?? []),
+    )
+
+  let total = 0
+  const bad: string[] = []
+  for (const category of PARSED) {
+    for (const node of flatten((category.root.children as SeedNode[]) ?? [])) {
+      const enrichList = ENRICH[`${category.name}:::${node.name}`] ?? []
+      node.codeBlocks.forEach((_block, i) => {
+        const enrich = enrichList[i]
+        const title =
+          enrich?.title || (node.codeBlocks.length > 1 ? `${node.name} ${i + 1}` : node.name)
+        const issues = checkSnippetMetadata({ name: title, description: enrich?.description || '' })
+        total++
+        if (issues.length > 0) bad.push(`${title} → ${formatIssues(issues)}`)
+      })
+    }
+  }
+
+  console.log(`[check] 片段共 ${total} 条，闸门会拦下 ${bad.length} 条`)
+  for (const b of bad.slice(0, 20)) console.error(`  - ${b}`)
+  if (bad.length > 20) console.error(`  ... 另有 ${bad.length - 20} 条`)
+  process.exit(bad.length > 0 ? 1 : 0)
 }
 
 main().catch(async (err) => {

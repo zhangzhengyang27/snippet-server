@@ -54,9 +54,25 @@ export class AuthService {
       return;
     }
 
-    const defaultPassword = process.env.ADMIN_DEFAULT_PASSWORD || 'admin123';
+    const configuredPassword = (process.env.ADMIN_DEFAULT_PASSWORD || '').trim();
+
+    // 生产环境不允许用默认/弱口令开箱启动（与 JWT_SECRET、DB_PASSWORD 同一策略）。
+    // 此前只 warn：全新部署开箱即 admin/admin123，叠加 A1 的授权缺口等于把公共
+    // 示例库写权限一并交出 —— 见审查报告 A4。
+    if (
+      process.env.NODE_ENV === 'production' &&
+      (!configuredPassword || configuredPassword === 'admin123' || configuredPassword.length < 12)
+    ) {
+      throw new Error(
+        '生产环境必须设置足够强度的 ADMIN_DEFAULT_PASSWORD（至少 12 个字符，且不能使用 admin123）',
+      );
+    }
+
+    const defaultPassword = configuredPassword || 'admin123';
     if (defaultPassword === 'admin123') {
-      console.warn('⚠️  [安全警告] 管理员默认密码为 admin123，请通过 ADMIN_DEFAULT_PASSWORD 环境变量设置强密码。');
+      console.warn(
+        '⚠️  [安全警告] 管理员默认密码为 admin123（仅限开发环境），生产部署请通过 ADMIN_DEFAULT_PASSWORD 设置强密码。',
+      );
     }
 
     const hashedPassword = await bcrypt.hash(defaultPassword, 10);

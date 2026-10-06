@@ -8,6 +8,7 @@ import { SnippetCollection } from '../entities/snippet-collection.entity';
 import { KnowledgeSnippetTag } from '../entities/knowledge-snippet-tag.entity';
 import { KnowledgeSnippetTagLink } from '../entities/knowledge-snippet-tag-link.entity';
 import { SnippetVersion } from '../entities/snippet-version.entity';
+import { FavoritesModule } from '../../favorites/favorites.module';
 
 @Module({
   imports: [
@@ -18,6 +19,8 @@ import { SnippetVersion } from '../entities/snippet-version.entity';
       KnowledgeSnippetTagLink,
       SnippetVersion,
     ]),
+    // 收藏态按当前用户计算（FavoritesService.resolveFavoriteIds）
+    FavoritesModule,
   ],
   controllers: [KnowledgeSnippetsController],
   providers: [KnowledgeSnippetsService, SnippetVersionService],

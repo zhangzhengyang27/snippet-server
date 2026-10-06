@@ -6,8 +6,11 @@ import type { SnippetPlaceholderDef } from './snippet-types'
  *  - [[名称=默认值]]      → text 占位符，带默认值
  *  - [[名称|选项A|选项B]]  → choice 占位符，候选项为竖线分隔
  * 名称紧跟 [[ 且内部不允许空白；未闭合的 [[ 不识别。
+ *
+ * 字符类里 `[` 无需转义（只有 `]` 需要），故写作 `[^[\]…]`；这与前端
+ * utils/snippetPlaceholders.ts 口径一致，行为已用 25 组用例逐一比对过。
  */
-const PLACEHOLDER_RE = /\[\[([^\[\]|\s=]+)(?:=([^\[\]]*)|(\|[^\[\]]*))?\]\]/g
+const PLACEHOLDER_RE = /\[\[([^[\]|\s=]+)(?:=([^[\]]*)|(\|[^[\]]*))?\]\]/g
 
 export function extractSnippetPlaceholderDefs(content: string): SnippetPlaceholderDef[] {
   const defs = new Map<string, SnippetPlaceholderDef>()

@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { User } from './modules/auth/entities/user.entity';
-import { Example } from './modules/examples/entities/example.entity';
 import { Favorite } from './modules/favorites/entities/favorite.entity';
 import { SnippetCollection } from './modules/knowledge/entities/snippet-collection.entity';
 import { KnowledgeSnippet } from './modules/knowledge/entities/knowledge-snippet.entity';
@@ -19,7 +18,6 @@ export default new DataSource({
   database: process.env.DB_NAME || 'html5_examples',
   entities: [
     User,
-    Example,
     Favorite,
     SnippetCollection,
     KnowledgeSnippet,

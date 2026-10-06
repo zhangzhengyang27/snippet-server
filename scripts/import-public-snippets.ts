@@ -2,9 +2,13 @@
  * 公共代码片段导入脚本
  *
  * 将项目根 data/ 目录下全部 snippets-*.json 文件中的代码片段导入数据库，
- * 作为「公共片段」（is_public = true，user_id 为 NULL）：
+ * 作为「公共片段」（is_public = true，user_id 指向托管账号 admin）：
  * - 未登录用户即可只读浏览、搜索、复制代码；
  * - 登录用户可「复制到我的集合」，但不能编辑/删除/收藏公共片段。
+ *
+ * 归属约定：公共片段的 user_id 不能为空，统一挂在托管账号（admin）名下。
+ * 历史数据曾写死 NULL（3232 条无归属），已由数据治理统一补为 admin，
+ * 本脚本同步修正，避免下次导入再次产生无归属片段。
  *
  * 组织方式：每个 JSON 文件对应一个公共集合（如「前端」「后端」），
  * 文件内每个 snippet 的 subcategory 字段决定其归属的子集合。
@@ -28,6 +32,11 @@ import { SnippetCollection } from '../src/modules/knowledge/entities/snippet-col
 import { KnowledgeSnippetTag } from '../src/modules/knowledge/entities/knowledge-snippet-tag.entity'
 import { KnowledgeSnippetTagLink } from '../src/modules/knowledge/entities/knowledge-snippet-tag-link.entity'
 import { User } from '../src/modules/auth/entities/user.entity'
+import { resolvePublicOwner } from './public-owner'
+import {
+  checkSnippetMetadata,
+  formatIssues,
+} from '../src/modules/knowledge/snippets/snippet-metadata.util'
 
 const dataSource = new DataSource({
   type: 'postgres',
@@ -110,6 +119,10 @@ async function main() {
   const collectionRepo = dataSource.getRepository(SnippetCollection)
   const snippetRepo = dataSource.getRepository(KnowledgeSnippet)
 
+  // 解析公共片段托管账号：读取失败直接中止，避免导入出一批无归属的片段
+  const publicOwner = await resolvePublicOwner(dataSource)
+  console.log(`公共片段托管账号：${publicOwner.username} (${publicOwner.id})`)
+
   // 代码片段 JSON 源文件所在目录（脚本位于 server/scripts/ 下，数据源位于项目根 data/ 目录）
   const rootDir = resolve(__dirname, '..', '..', 'data')
 
@@ -117,6 +130,9 @@ async function main() {
   let subCollectionsCreated = 0
   let snippetsInserted = 0
   let snippetsSkipped = 0
+  /** 语义闸门拦下的（标题/描述不达标） */
+  let snippetsRejected = 0
+  const invalidReasons: string[] = []
 
   // 缓存每个根集合下已创建的子集合，减少数据库查询
   const subCollectionCache = new Map<string, SnippetCollection>()
@@ -223,6 +239,14 @@ async function main() {
           continue
         }
 
+        // 语义闸门：标题/描述不达标的片段不写库（历史病灶：description 缺失导致空壳描述回库）
+        const issues = checkSnippetMetadata({ name: item.name, description: item.description ?? null })
+        if (issues.length > 0) {
+          snippetsRejected++
+          invalidReasons.push(`${item.name} → ${formatIssues(issues)}`)
+          continue
+        }
+
         await snippetRepo.save(
           snippetRepo.create({
             id: generateId(),
@@ -247,8 +271,14 @@ async function main() {
   }
 
   console.log(
-    `\n导入完成：新建根集合 ${rootCollectionsCreated} 个，新建子集合 ${subCollectionsCreated} 个，新增片段 ${snippetsInserted} 条，跳过 ${snippetsSkipped} 条`,
+    `\n导入完成：新建根集合 ${rootCollectionsCreated} 个，新建子集合 ${subCollectionsCreated} 个，新增片段 ${snippetsInserted} 条，跳过 ${snippetsSkipped} 条，语义闸门拦下 ${snippetsRejected} 条`,
   )
+  if (invalidReasons.length > 0) {
+    console.error(`\n⚠️ 语义闸门拦下 ${invalidReasons.length} 条未写入（标题/描述不达标）：`)
+    for (const r of invalidReasons.slice(0, 20)) console.error(`  - ${r}`)
+    if (invalidReasons.length > 20) console.error(`  ... 另有 ${invalidReasons.length - 20} 条`)
+    process.exitCode = 1
+  }
   await dataSource.destroy()
 
   /** 创建或复用子集合 */

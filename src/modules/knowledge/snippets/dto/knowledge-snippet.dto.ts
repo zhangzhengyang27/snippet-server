@@ -1,27 +1,56 @@
-import { Transform, Type } from 'class-transformer'
+import { Transform } from 'class-transformer'
 import {
- ArrayNotEmpty,
- IsArray,
- IsBoolean,
- IsInt,
- IsNotEmpty,
- IsObject,
- IsOptional,
- IsString,
- MaxLength,
- Min,
+  ArrayNotEmpty,
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  registerDecorator,
+  ValidationArguments,
+  ValidatorConstraintInterface,
 } from 'class-validator'
+import { checkSnippetMetadata } from '../snippet-metadata.util'
 
-const normalizeTagValue = ({ value }: { value: unknown }) => {
- if (!Array.isArray(value)) {
-   return []
- }
- return value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+/** 标题 / 描述语义闸门：复用 snippet-metadata.util 的同一套规则，脏数据在写库前就 400。 */
+class IsSnippetMetadataConstraint implements ValidatorConstraintInterface {
+  constructor(private readonly options: { partial?: boolean } = {}) {}
+
+  // 注意：class-validator 传给约束的第一个参数是「当前属性的值」，不是整个 DTO。
+  // 标题/描述是跨字段规则，必须从 ValidationArguments.object 取整个对象，
+  // 否则所有校验都会因为「取不到 name/description」而恒不通过（闸门形同虚设）。
+  validate(_value: unknown, args?: ValidationArguments): boolean {
+    const payload = (args?.object ?? {}) as { name?: string | null; description?: string | null }
+    return checkSnippetMetadata(payload, this.options).length === 0
+  }
+
+  defaultMessage(): string {
+    return '标题、描述不符合语义规范：标题需非空且 ≤30 字、不得由语言标识开头；描述需非空且 ≥20 字、不能与标题相同'
+  }
+}
+
+/**
+ * 挂在 name 字段上，但校验的是整个 DTO（拿得到 description）。
+ * partial 用于 PATCH：只校验调用方实际传入的字段，避免「改个标题顺带被要求补描述」。
+ */
+export function IsSnippetMetadata(options: { partial?: boolean } = {}) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      target: object.constructor,
+      propertyName,
+      validator: new IsSnippetMetadataConstraint(options),
+    })
+  }
 }
 
 export class CreateKnowledgeSnippetDto {
  @IsString()
  @MaxLength(160)
+ @IsSnippetMetadata()
  name!: string
 
  @IsOptional()
@@ -66,6 +95,7 @@ export class UpdateKnowledgeSnippetDto {
  @IsOptional()
  @IsString()
  @MaxLength(160)
+ @IsSnippetMetadata({ partial: true })
  name?: string
 
  @IsOptional()

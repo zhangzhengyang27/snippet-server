@@ -26,7 +26,13 @@ export class KnowledgeSnippet {
   @Column({ name: 'collection_id', type: 'varchar', length: 12, nullable: true })
   collectionId!: string | null
 
-  /** 是否为公共片段：公共片段不归属用户（userId 为 NULL），对未登录用户只读可见 */
+  /**
+   * 是否为公共片段：对所有人（含未登录）可见，登录用户可复制到自己的集合。
+   *
+   * 注意：公共片段同样有归属 —— userId 指向托管账号（admin），不能为 NULL。
+   * 只读语义由本字段表达，与归属给谁无关：即使挂在 admin 名下，
+   * 公共片段也不出现在任何人的「我的片段」编辑入口里。
+   */
   @Index()
   @Column({ name: 'is_public', default: false })
   isPublic!: boolean

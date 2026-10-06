@@ -10,7 +10,19 @@ import { MigrationInterface, QueryRunner } from 'typeorm'
  *
  * ## 这份 DDL 是怎么来的
  * 对着一个**空库**跑 TypeORM 的 `createSchemaBuilder().log()` 生成，因此它等价于
- * 「全新安装所需的全部建表语句」，共 28 条（7 张表 + 索引 + 外键）。
+ * 「全新安装所需的全部建表语句」，共 26 条（6 张表 + 索引 + 外键）。
+ * （`snippet_versions` 由后续迁移 AddSnippetVersions 创建，不在此列。）
+ *
+ * 与线上库的差异：线上库是从原 html5-examples 库沿革下来的，存在**系统性历史
+ * 漂移** —— `users` 多出 display_name / avatar / email / phone / last_login_at
+ * 等列且若干默认值不同，`ui_knowledge_snippet_tags` 多一个指向 users 的外键，
+ * 若干索引名也被手工改过；`favorites` 的级联外键线上叫 `fk_favorites_snippet_id`
+ * （示例库下线时手工 SQL 所加），此处按实体的 `@ManyToOne` 声明生成，名字是
+ * TypeORM 风格的 `FK_73e51e509d6f97790a00da8328c` —— 语义一致（均 ON DELETE CASCADE）。
+ *
+ * 本文件刻意**只反映当前实体的定义**，不追平这些漂移 —— 这样面向全新库的
+ * schema 才是自洽的（`migration:generate` 在全新库上零差异）。追平历史漂移
+ * 属于另一件事，不应混进这份基线。
  *
  * ## 为什么它已被标记为「已应用」
  * 现有数据库里这 7 张表**早就存在**，直接 `migration:run` 会因表已存在而失败。
@@ -33,13 +45,10 @@ export class Baseline1790751735731 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "username" character varying(50) NOT NULL, "password" character varying(100) NOT NULL, "role" character varying(20) NOT NULL DEFAULT 'user', "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"));`)
     await queryRunner.query(`CREATE UNIQUE INDEX "IDX_fe0bb3f6520ee0469504521e71" ON "users" ("username") ;`)
-    await queryRunner.query(`CREATE TABLE "examples" ("id" character varying(12) NOT NULL DEFAULT '', "title" character varying(200) NOT NULL, "description" text, "category" character varying(80) NOT NULL DEFAULT '通用', "category_slug" character varying(80) NOT NULL DEFAULT 'general', "topic_slug" character varying(80) NOT NULL DEFAULT 'general', "tags" text array NOT NULL DEFAULT '{}', "language" character varying(40) NOT NULL DEFAULT 'html', "source_file" character varying(300), "source_line" integer, "source_group" character varying(120), "difficulty" character varying(20), "is_interactive" boolean NOT NULL DEFAULT false, "html" text, "css" text, "js" text, "snippets" jsonb NOT NULL DEFAULT '[]', "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_ea56499b0a3a29593d3405080e8" PRIMARY KEY ("id"));`)
-    await queryRunner.query(`CREATE INDEX "IDX_e48c6bee03349dd5a93107cba4" ON "examples" ("category_slug") ;`)
-    await queryRunner.query(`CREATE INDEX "IDX_25f805a638ccbff7a8318ff892" ON "examples" ("topic_slug") ;`)
-    await queryRunner.query(`CREATE TABLE "favorites" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "user_id" character varying(64) NOT NULL, "example_id" character varying(12) NOT NULL, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_890818d27523748dd36a4d1bdc8" PRIMARY KEY ("id"));`)
+    await queryRunner.query(`CREATE TABLE "favorites" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "user_id" character varying(64) NOT NULL, "snippet_id" character varying(12) NOT NULL, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_890818d27523748dd36a4d1bdc8" PRIMARY KEY ("id"));`)
     await queryRunner.query(`CREATE INDEX "IDX_35a6b05ee3b624d0de01ee5059" ON "favorites" ("user_id") ;`)
-    await queryRunner.query(`CREATE INDEX "IDX_20ff78dda10b47c31da3523f80" ON "favorites" ("example_id") ;`)
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_ef3ac47888c12cff850f089dce" ON "favorites" ("user_id", "example_id") ;`)
+    await queryRunner.query(`CREATE INDEX "IDX_73e51e509d6f97790a00da8328" ON "favorites" ("snippet_id") ;`)
+    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_f7b5b29ff4ca9ce1effda5d4bb" ON "favorites" ("user_id", "snippet_id") ;`)
     await queryRunner.query(`CREATE TABLE "ui_snippet_collections" ("id" character varying(12) NOT NULL, "user_id" uuid, "parent_id" character varying(12), "is_public" boolean NOT NULL DEFAULT false, "name" character varying(120) NOT NULL, "sort_order" integer NOT NULL DEFAULT '0', "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_093aeafa9b9f3d4891d6694d605" PRIMARY KEY ("id"));`)
     await queryRunner.query(`CREATE INDEX "IDX_633824f2e33b3df22ef741fcbc" ON "ui_snippet_collections" ("user_id") ;`)
     await queryRunner.query(`CREATE INDEX "IDX_d62ac31b5a204f74a3ed7b339e" ON "ui_snippet_collections" ("parent_id") ;`)
@@ -59,6 +68,8 @@ export class Baseline1790751735731 implements MigrationInterface {
     await queryRunner.query(`ALTER TABLE "ui_knowledge_snippet_tag_links" ADD CONSTRAINT "FK_131dba17f60504d5ad1b31aeadd" FOREIGN KEY ("tag_id") REFERENCES "ui_knowledge_snippet_tags"("id") ON DELETE CASCADE ON UPDATE NO ACTION;`)
     await queryRunner.query(`ALTER TABLE "ui_knowledge_snippets" ADD CONSTRAINT "FK_d2a6c72f3306b1a062eec6a6ba6" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;`)
     await queryRunner.query(`ALTER TABLE "ui_knowledge_snippets" ADD CONSTRAINT "FK_2e6e52f6c235a58ef9e38b4f6b0" FOREIGN KEY ("collection_id") REFERENCES "ui_snippet_collections"("id") ON DELETE SET NULL ON UPDATE NO ACTION;`)
+    // favorites.snippet_id → ui_knowledge_snippets（实体以 @ManyToOne 声明，级联删除收藏）
+    await queryRunner.query(`ALTER TABLE "favorites" ADD CONSTRAINT "FK_73e51e509d6f97790a00da8328c" FOREIGN KEY ("snippet_id") REFERENCES "ui_knowledge_snippets"("id") ON DELETE CASCADE ON UPDATE NO ACTION;`)
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -68,7 +79,6 @@ export class Baseline1790751735731 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS "ui_knowledge_snippets" CASCADE`)
     await queryRunner.query(`DROP TABLE IF EXISTS "ui_snippet_collections" CASCADE`)
     await queryRunner.query(`DROP TABLE IF EXISTS "favorites" CASCADE`)
-    await queryRunner.query(`DROP TABLE IF EXISTS "examples" CASCADE`)
     await queryRunner.query(`DROP TABLE IF EXISTS "users" CASCADE`)
   }
 }

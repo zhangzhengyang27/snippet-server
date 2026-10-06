@@ -25,6 +25,11 @@ import { SnippetCollection } from '../src/modules/knowledge/entities/snippet-col
 import { KnowledgeSnippetTag } from '../src/modules/knowledge/entities/knowledge-snippet-tag.entity'
 import { KnowledgeSnippetTagLink } from '../src/modules/knowledge/entities/knowledge-snippet-tag-link.entity'
 import { User } from '../src/modules/auth/entities/user.entity'
+import { resolvePublicOwner } from './public-owner'
+import {
+  checkSnippetMetadata,
+  formatIssues,
+} from '../src/modules/knowledge/snippets/snippet-metadata.util'
 
 const SOURCE_PATH =
   '/Users/xiaoye/Desktop/待处理的项目/js-advanced-road/project-data.json'
@@ -84,6 +89,10 @@ async function main() {
   const collectionRepo = dataSource.getRepository(SnippetCollection)
   const snippetRepo = dataSource.getRepository(KnowledgeSnippet)
 
+  // 公共片段统一挂在托管账号下，不再写 NULL 归属
+  const publicOwner = await resolvePublicOwner(dataSource)
+  console.log(`公共片段托管账号：${publicOwner.username} (${publicOwner.id})`)
+
   // ─── 复用「前端」公共根集合 ───
   let root = await collectionRepo.findOne({
     where: {
@@ -136,6 +145,9 @@ async function main() {
   let skippedEmpty = 0
   let skippedDup = 0
   let skippedName = 0
+  /** 语义闸门拦下的（标题/描述不达标），与上面「内容重复」分开统计 */
+  let skippedInvalid = 0
+  const invalidReasons: string[] = []
   const batchContent = new Set<string>()
   let subOrder = allSub.length
 
@@ -182,10 +194,18 @@ async function main() {
       continue
     }
 
+    // 语义闸门：标题/描述不达标的片段不写库（历史病灶：description 缺失导致空壳描述回库）
+    const issues = checkSnippetMetadata({ name: finalName, description: item.description ?? null })
+    if (issues.length > 0) {
+      skippedInvalid++
+      invalidReasons.push(`${finalName} → ${formatIssues(issues)}`)
+      continue
+    }
+
     await snippetRepo.save(
       snippetRepo.create({
         id: generateId(),
-        userId: null,
+        userId: publicOwner.id,
         collectionId: sub.id,
         isPublic: true,
         name: finalName,
@@ -212,8 +232,14 @@ async function main() {
     })
   }
   console.log(
-    `\n导入完成：新增 ${inserted} 条，跳过(空/无效) ${skippedEmpty}，跳过(内容重复) ${skippedDup}，跳过(同名) ${skippedName}`,
+    `\n导入完成：新增 ${inserted} 条，跳过(空/无效) ${skippedEmpty}，跳过(内容重复) ${skippedDup}，跳过(同名) ${skippedName}，跳过(语义不达标) ${skippedInvalid}`,
   )
+  if (invalidReasons.length > 0) {
+    console.error(`\n⚠️ 语义闸门拦下 ${invalidReasons.length} 条未写入（标题/描述不达标）：`)
+    for (const r of invalidReasons.slice(0, 20)) console.error(`  - ${r}`)
+    if (invalidReasons.length > 20) console.error(`  ... 另有 ${invalidReasons.length - 20} 条`)
+    process.exitCode = 1
+  }
   console.log(
     `前端根集合最终：子集合 ${finalSubs.length} 个，公共片段 ${totalSnips} 条`,
   )

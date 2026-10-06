@@ -51,12 +51,24 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // 安全检查：JWT Secret
+  // 安全检查：JWT Secret —— 与 DB_PASSWORD 同级，生产环境弱值直接拒绝启动。
+  // 此前只 warn：生产漏配 JWT_SECRET 时服务照常起来，攻击者可用已知弱密钥离线
+  // 签发 {sub: <admin uuid>, role: 'admin'} 的 token 完全接管后台 —— 见审查报告 A3。
   const jwtSecret = process.env.JWT_SECRET || '';
-  if (!jwtSecret || INSECURE_JWT_SECRETS.includes(jwtSecret)) {
+  const jwtSecretTooWeak =
+    !jwtSecret || INSECURE_JWT_SECRETS.includes(jwtSecret) || jwtSecret.length < 32;
+  if (jwtSecretTooWeak) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        '生产环境必须设置足够强度的 JWT_SECRET（至少 32 个字符，且不能使用示例/默认值）',
+      );
+    }
     console.warn(
-      '\n⚠️  [安全警告] JWT_SECRET 使用了不安全的默认值。',
-      '\n   请在 .env 文件中设置一个随机的强密钥（建议 32 字符以上）。\n',
+      '\n⚠️  [安全警告] JWT_SECRET 为空、过短或使用了不安全的默认值。',
+      '\n   请在 .env 文件中设置一个随机强密钥（建议 32 字符以上）。',
+      `\n   当前密钥指纹：${
+        jwtSecret ? `${jwtSecret.slice(0, 4)}…（长度 ${jwtSecret.length}）` : '（未设置）'
+      }\n`,
     );
   }
 

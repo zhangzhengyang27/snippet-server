@@ -24,6 +24,7 @@ import {
 } from './snippet-display.util'
 import { extractSnippetPlaceholderDefs } from './snippet-placeholder.util'
 import { SnippetVersionService } from './snippet-version.service'
+import { FavoritesService } from '../../favorites/favorites.service'
 import type {
   SnippetDisplayAttrs,
   SnippetPlaceholderDef,
@@ -139,6 +140,7 @@ export class KnowledgeSnippetsService {
     private readonly tagLinkRepo: Repository<KnowledgeSnippetTagLink>,
     private readonly dataSource: DataSource,
     private readonly snippetVersionService: SnippetVersionService,
+    private readonly favoritesService: FavoritesService,
   ) {}
 
   private buildCollectionTree(
@@ -353,7 +355,7 @@ export class KnowledgeSnippetsService {
     )
   }
 
-  private mapSnippet(item: KnowledgeSnippet) {
+  private mapSnippet(item: KnowledgeSnippet, favoriteOverride?: boolean) {
     const displayAttrs = normalizeSnippetDisplayAttrs(
       (item.displayAttrs as Record<string, unknown> | null | undefined) ?? undefined,
     )
@@ -374,7 +376,8 @@ export class KnowledgeSnippetsService {
       isPublic: item.isPublic,
       displayAttrs,
       placeholderDefs,
-      favorite: item.favorite,
+      // 收藏是**按用户**的：能算出来就用收藏表的结论覆盖那一列全局旧标记
+      favorite: favoriteOverride ?? item.favorite,
       usageCount: item.usageCount,
       lastUsedAt: item.lastUsedAt?.toISOString() ?? null,
       createdAt: item.createdAt.toISOString(),
@@ -656,8 +659,25 @@ export class KnowledgeSnippetsService {
       qb.andWhere('snippet.collectionId IN (:...collectionIds)', { collectionIds })
     }
 
+    // 「只看收藏」按**用户收藏表**过滤，而不是那列全局旧标记：
+    // `snippet.favorite` 是全局布尔列，任何人收藏都会置 true，无法表达「我的收藏」。
     if (typeof query.favorite === 'boolean') {
-      qb.andWhere('snippet.favorite = :favorite', { favorite: query.favorite })
+      if (!userId) {
+        // 未登录没有收藏：请求 favorite=true 时命中一个恒假条件（等价于空集）
+        if (query.favorite) qb.andWhere('1 = 0')
+      } else if (query.favorite) {
+        qb.andWhere(
+          `EXISTS (SELECT 1 FROM favorites fav
+                   WHERE fav.snippet_id = snippet.id AND fav.user_id = :favFilterUserId)`,
+          { favFilterUserId: userId },
+        )
+      } else {
+        qb.andWhere(
+          `NOT EXISTS (SELECT 1 FROM favorites fav
+                       WHERE fav.snippet_id = snippet.id AND fav.user_id = :favFilterUserId)`,
+          { favFilterUserId: userId },
+        )
+      }
     }
 
     // 按 id 批量取详情（「最近浏览」等先有 id 列表的场景），把前端的 N 次回查压成 1 次。
@@ -694,7 +714,23 @@ export class KnowledgeSnippetsService {
       )
     }
 
-    qb.orderBy('snippet.favorite', 'DESC')
+    // 默认把「当前用户收藏的」排在最前（按用户，不再是那列全局标记）。
+    // 未登录没有收藏，直接交给下面的 addOrderBy 决定顺序。
+    //
+    // 注意：**不能把原始 SQL 直接塞进 orderBy** —— 分页（skip/take + join）时
+    // TypeORM 会按 `.` 拆分 orderBy 表达式去查 join 别名，含点号的原始 SQL
+    // （如 `fav.snippet_id`）会被当成 `别名.属性` 解析而抛出 TypeORMError → 500。
+    // 改为先 addSelect 成具名别名再按别名排序：别名不含 `.`，走 TypeORM 的安全分支。
+    if (userId) {
+      qb.addSelect(
+        `CASE WHEN EXISTS (SELECT 1 FROM favorites fav
+                           WHERE fav.snippet_id = snippet.id AND fav.user_id = :favoriteOrderUserId)
+              THEN 0 ELSE 1 END`,
+        'favorite_rank',
+      )
+      qb.setParameter('favoriteOrderUserId', userId)
+      qb.orderBy('favorite_rank', 'ASC')
+    }
 
     if (query.sort === 'name') {
       qb.addOrderBy('snippet.name', 'ASC')
@@ -712,9 +748,14 @@ export class KnowledgeSnippetsService {
     }
 
     const [items, total] = await qb.getManyAndCount()
+    // 一次性把本页片段的「我是否收藏」查出来，避免逐条判断产生 N+1
+    const favoriteIds = await this.favoritesService.resolveFavoriteIds(
+      userId,
+      items.map(item => item.id),
+    )
 
     return {
-      items: items.map(item => this.mapSnippet(item)),
+      items: items.map(item => this.mapSnippet(item, favoriteIds.has(item.id))),
       total,
       page,
       pageSize,
@@ -733,7 +774,9 @@ export class KnowledgeSnippetsService {
 
     this.assertSnippetAccessible(item, userId)
 
-    return this.mapSnippet(item)
+    // 详情页的收藏态同样是按用户的（公共片段也能被非归属者收藏）
+    const favoriteIds = await this.favoritesService.resolveFavoriteIds(userId, [item.id])
+    return this.mapSnippet(item, favoriteIds.has(item.id))
   }
 
   async createSnippet(userId: string, payload: CreateKnowledgeSnippetDto) {

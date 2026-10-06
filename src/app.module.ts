@@ -4,7 +4,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { User } from './modules/auth/entities/user.entity';
-import { Example } from './modules/examples/entities/example.entity';
 import { Favorite } from './modules/favorites/entities/favorite.entity';
 import { SnippetCollection } from './modules/knowledge/entities/snippet-collection.entity';
 import { KnowledgeSnippet } from './modules/knowledge/entities/knowledge-snippet.entity';
@@ -12,7 +11,6 @@ import { KnowledgeSnippetTag } from './modules/knowledge/entities/knowledge-snip
 import { KnowledgeSnippetTagLink } from './modules/knowledge/entities/knowledge-snippet-tag-link.entity';
 import { SnippetVersion } from './modules/knowledge/entities/snippet-version.entity';
 import { AuthModule } from './modules/auth/auth.module';
-import { ExamplesModule } from './modules/examples/examples.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { KnowledgeSnippetsModule } from './modules/knowledge/snippets/knowledge-snippets.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
@@ -20,8 +18,11 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 
 /**
  * Snippet 后端（html5-examples server 的裁剪装配版）：
- * 只保留 snippet 前端消费的 Auth / Examples / Favorites / KnowledgeSnippets 四域。
+ * 只保留 snippet 前端消费的 Auth / Favorites / KnowledgeSnippets 三域。
  * drive、图表、画布、UI 模板等模块文件归档在 ../_archive，未删除。
+ *
+ * 示例库（Examples）已整体下线：示例数据与前端页面一并移除，`favorites`
+ * 改为按用户收藏知识片段（见 favorites 模块）。
  */
 @Module({
   imports: [
@@ -35,7 +36,6 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
       database: process.env.DB_NAME || 'html5_examples',
       entities: [
         User,
-        Example,
         Favorite,
         SnippetCollection,
         KnowledgeSnippet,
@@ -60,7 +60,6 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
       migrationsRun: false,
     }),
     AuthModule,
-    ExamplesModule,
     FavoritesModule,
     KnowledgeSnippetsModule,
     RateLimitModule,

@@ -59,8 +59,13 @@ export class AuthController {
   @Post('me')
   @HttpCode(HttpStatus.OK)
   me(@Req() req: Request & { user?: { userId: string; username: string; role: string } }) {
+    // 归一化为与 /auth/login 相同的 user 结构（id/username/role）。
+    // JWT guard 注入的是 userId —— 此前原样透传，前端恢复会话后 user.id 变
+    // undefined：顶栏/个人中心的「用户 ID」显示空白、复制按钮静默失效。
     return {
-      user: req.user || null,
+      user: req.user
+        ? { id: req.user.userId, username: req.user.username, role: req.user.role }
+        : null,
     };
   }
 }

@@ -20,6 +20,7 @@ import { DataSource, IsNull } from 'typeorm'
 import dataSource from '../data-source'
 import { SnippetCollection } from '../src/modules/knowledge/entities/snippet-collection.entity'
 import { KnowledgeSnippet } from '../src/modules/knowledge/entities/knowledge-snippet.entity'
+import { resolvePublicOwner } from './public-owner'
 
 const SOURCE_ROOT = '/Users/xiaoye/Desktop/待处理的项目/snippets'
 const COLLECTION_NAME = 'snippets 常用代码片段'
@@ -368,6 +369,7 @@ async function upsertCollection(
 async function upsertSnippet(
   collectionId: string,
   unit: Unit,
+  ownerId: string,
 ): Promise<KnowledgeSnippet> {
   const repo = dataSource.getRepository(KnowledgeSnippet)
   const mainRel = unit.main
@@ -390,7 +392,7 @@ async function upsertSnippet(
   }
 
   const existing = await repo.findOne({
-    where: { name: unit.name, collectionId, isPublic: true, userId: IsNull() },
+    where: { name: unit.name, collectionId, isPublic: true, userId: ownerId },
   })
   if (existing) {
     existing.language = mainLang
@@ -423,6 +425,10 @@ async function main() {
   await dataSource.initialize()
   const collRepo = dataSource.getRepository(SnippetCollection)
 
+  // 公共片段统一挂在托管账号下，不再写 NULL 归属
+  const publicOwner = await resolvePublicOwner(dataSource)
+  console.log(`公共片段托管账号：${publicOwner.username} (${publicOwner.id})`)
+
   // 定位「前端」一级集合
   const front = await collRepo.findOne({
     where: { name: '前端', parentId: IsNull(), isPublic: true },
@@ -438,7 +444,7 @@ async function main() {
   let snippetCount = 0
   let multiCount = 0
   for (const unit of UNITS) {
-    const snip = await upsertSnippet(collection.id, unit)
+    const snip = await upsertSnippet(collection.id, unit, publicOwner.id)
     snippetCount++
     if (unit.files.length > 1) multiCount++
     const mark = unit.files.length > 1 ? `（多文件 ${unit.files.length}）` : ''
