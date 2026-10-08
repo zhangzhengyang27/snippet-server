@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common'
 import type { Request } from 'express'
 import { RequireAuthGuard } from '../../auth/guards/require-auth.guard'
+import { RolesGuard } from '../../auth/guards/roles.guard'
+import { Roles } from '../../auth/guards/roles.decorator'
 import {
  BatchAddTagDto,
  BatchDeleteDto,
@@ -19,6 +21,9 @@ import {
  CreateSnippetCollectionDto,
  CopySnippetDto,
  ListKnowledgeSnippetsDto,
+ ListModerationQueueDto,
+ ListSnippetCollectionsQueryDto,
+ ModerateSnippetDto,
  ReorderSnippetCollectionsDto,
  UpdateKnowledgeSnippetDto,
  UpdateSnippetCollectionDto,
@@ -40,8 +45,14 @@ export class KnowledgeSnippetsController {
  constructor(private readonly knowledgeSnippetsService: KnowledgeSnippetsService) {}
 
  @Get('collections/tree')
- listCollections(@Req() request: AuthedRequest) {
-   return this.knowledgeSnippetsService.listCollectionsTree(request.user?.userId ?? null)
+ listCollections(
+   @Req() request: AuthedRequest,
+   @Query() query: ListSnippetCollectionsQueryDto,
+ ) {
+   return this.knowledgeSnippetsService.listCollectionsTree(
+     request.user?.userId ?? null,
+     query.scope ?? 'all',
+   )
  }
 
  @Post('collections')
@@ -55,7 +66,8 @@ export class KnowledgeSnippetsController {
  reorderCollections(@Req() request: AuthedRequest, @Body() payload: ReorderSnippetCollectionsDto) {
    return this.knowledgeSnippetsService.reorderCollections(
      request.user!.userId,
-     Array.isArray(payload.items) ? payload.items : []
+     Array.isArray(payload.items) ? payload.items : [],
+     payload.scope ?? 'all',
    )
  }
 
@@ -78,6 +90,19 @@ export class KnowledgeSnippetsController {
  @Get('tags')
  listTags(@Req() request: AuthedRequest) {
    return this.knowledgeSnippetsService.listTags(request.user?.userId ?? null)
+ }
+
+ /**
+  * 审核队列（管理员）。
+  *
+  * 必须声明在 `@Get(':id')` **之前** —— 否则 `moderation` 会被当成片段 id 匹配走详情接口。
+  * 控制器里 `collections/tree`、`tags` 同理，都是刻意前置的固定路径。
+  */
+ @Get('moderation/queue')
+ @UseGuards(RequireAuthGuard, RolesGuard)
+ @Roles('admin')
+ listModerationQueue(@Query() query: ListModerationQueueDto) {
+   return this.knowledgeSnippetsService.listModerationQueue(query)
  }
 
  @Get()
@@ -172,6 +197,44 @@ export class KnowledgeSnippetsController {
      id,
      payload.collectionId ?? null
    )
+ }
+
+ // ── 发布到公共代码块库（作者侧） ──
+
+ /**
+  * 提交发布：把自有片段送审，管理员通过后进入公共库。
+  * 提交后 isPublic 仍为 false（未上架），前端据 moderationStatus 显示「审核中」。
+  */
+ @Post(':id/publication')
+ @UseGuards(RequireAuthGuard)
+ submitPublication(@Req() request: AuthedRequest, @Param('id') id: string) {
+   return this.knowledgeSnippetsService.submitSnippetForPublication(request.user!.userId, id)
+ }
+
+ /**
+  * 取消发布：撤回待审（pending）或下架已发布（approved），一律回到私有。
+  */
+ @Delete(':id/publication')
+ @UseGuards(RequireAuthGuard)
+ withdrawPublication(@Req() request: AuthedRequest, @Param('id') id: string) {
+   return this.knowledgeSnippetsService.withdrawSnippetPublication(request.user!.userId, id)
+ }
+
+ // ── 审核（管理员） ──
+
+ /**
+  * 裁决一条待审片段：approve → 进公共库；reject → 保持私有并记录原因。
+  * 用 `@Roles('admin')` 限定角色，非管理员一律 403。
+  */
+ @Post(':id/moderation')
+ @UseGuards(RequireAuthGuard, RolesGuard)
+ @Roles('admin')
+ moderate(
+   @Req() request: AuthedRequest,
+   @Param('id') id: string,
+   @Body() payload: ModerateSnippetDto
+ ) {
+   return this.knowledgeSnippetsService.moderateSnippet(request.user!.userId, id, payload)
  }
 
   // ── 批量操作（8/30 页面契约） ──

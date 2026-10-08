@@ -20,6 +20,12 @@ export interface RateLimitOptions {
   max: number;
   /** 窗口长度（毫秒） */
   windowMs: number;
+  /**
+   * 超限时返回给用户的提示文案。
+   * 缺省为「登录尝试次数过多，请稍后再试」（登录接口的历史文案）——
+   * 注册等其它接口应显式给出更贴切的文案。
+   */
+  message?: string;
 }
 
 /**

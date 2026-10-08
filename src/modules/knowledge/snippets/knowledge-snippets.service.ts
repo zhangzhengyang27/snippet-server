@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm'
+import type { FindOptionsWhere } from 'typeorm'
 import { generateId } from '../../../common/utils/id.util'
 import { clampPage, clampPageSize } from '../../../common/utils/pagination.util'
 import { KnowledgeSnippet } from '../entities/knowledge-snippet.entity'
@@ -17,14 +18,22 @@ import {
   ListKnowledgeSnippetsDto,
   UpdateKnowledgeSnippetDto,
   UpdateSnippetCollectionDto,
+  normalizeSnippetScope,
+} from './dto/knowledge-snippet.dto'
+import type {
+  ListModerationQueueDto,
+  ModerateSnippetDto,
+  SnippetScope,
 } from './dto/knowledge-snippet.dto'
 import {
   normalizeSnippetDisplayAttrs,
   snippetDisplayDefaults,
 } from './snippet-display.util'
 import { extractSnippetPlaceholderDefs } from './snippet-placeholder.util'
+import { PUBLIC_OWNER_USERNAME } from './public-owner.util'
 import { SnippetVersionService } from './snippet-version.service'
 import { FavoritesService } from '../../favorites/favorites.service'
+import { User } from '../../auth/entities/user.entity'
 import type {
   SnippetDisplayAttrs,
   SnippetPlaceholderDef,
@@ -226,6 +235,32 @@ export class KnowledgeSnippetsService {
     return snippet
   }
 
+  /** 公共片段托管账号 id 的一次性缓存（见 resolvePublicOwnerId）。 */
+  private publicOwnerIdCache: string | null | undefined = undefined
+
+  /**
+   * 懒解析并缓存「公共片段托管账号」（admin）的 id。
+   *
+   * 用途：`scope = mine` 时把「用户自己发布的片段」与「admin 名下 3,414 条运营数据」
+   * 区分开 —— 前者应在「我的代码块」可见（作者要能管理 / 下架），后者绝不能涌入
+   * 任何人的个人工作区（admin 登录时同理）。
+   *
+   * 解析失败（admin 尚未创建 / 库异常）时返回 null，调用方降级为保守策略
+   * （只认 isPublic = false）—— 宁可少显示，也不炸个人工作区。
+   */
+  private async resolvePublicOwnerId(): Promise<string | null> {
+    if (this.publicOwnerIdCache !== undefined) {
+      return this.publicOwnerIdCache
+    }
+
+    const owner = await this.dataSource
+      .getRepository(User)
+      .findOne({ where: { username: PUBLIC_OWNER_USERNAME }, select: ['id'] })
+
+    this.publicOwnerIdCache = owner?.id ?? null
+    return this.publicOwnerIdCache
+  }
+
   /**
    * 断言当前用户对指定集合拥有访问权：
    * 公共集合对所有人（含未登录）可见，非公共集合仅归属者可见。
@@ -355,7 +390,19 @@ export class KnowledgeSnippetsService {
     )
   }
 
-  private mapSnippet(item: KnowledgeSnippet, favoriteOverride?: boolean) {
+  /**
+   * 片段 → 响应 DTO。
+   *
+   * `includeContent` 默认 true（详情 / 审核队列 / by-ids 等「就要这几条」的场景保存全文）。
+   * 浏览型列表（分页 + 无限滚动）传 false —— 列表项不返回 `content`：它占单条载荷约 73%，
+   * 而列表 UI 只用标题 / 描述 / 标签（代码正文仅在选中预览、复制、导出时才需要，届时按需回查）。
+   * 4,000 条规模下无限滚动会把 payload 从数 MB 压到几百 KB。
+   */
+  private mapSnippet(
+    item: KnowledgeSnippet,
+    favoriteOverride?: boolean,
+    includeContent = true,
+  ) {
     const displayAttrs = normalizeSnippetDisplayAttrs(
       (item.displayAttrs as Record<string, unknown> | null | undefined) ?? undefined,
     )
@@ -367,13 +414,24 @@ export class KnowledgeSnippetsService {
       (left.tag?.name ?? '').localeCompare(right.tag?.name ?? ''),
     )
 
+    // 公共片段可能是作者从**自己的私有集合**里发布出来的 —— 那个集合名属于作者的
+    // 私人组织，不能出现在公共库（列表 / 详情）里。私有片段照旧显示自己的集合名。
+    const collectionName =
+      item.collection && (!item.isPublic || item.collection.isPublic)
+        ? item.collection.name
+        : null
+
     return {
       id: item.id,
       name: item.name,
       description: item.description,
       language: item.language,
-      content: item.content,
+      // 列表模式刻意省略该键（不是置 null）：省的是字节，不是语义。
+      ...(includeContent ? { content: item.content } : {}),
       isPublic: item.isPublic,
+      moderationStatus: item.moderationStatus ?? 'none',
+      moderationNote: item.moderationNote ?? null,
+      moderatedAt: item.moderatedAt?.toISOString() ?? null,
       displayAttrs,
       placeholderDefs,
       // 收藏是**按用户**的：能算出来就用收藏表的结论覆盖那一列全局旧标记
@@ -383,14 +441,30 @@ export class KnowledgeSnippetsService {
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
       collectionId: item.collectionId ?? item.collection?.id ?? null,
-      collectionName: item.collection?.name ?? null,
+      collectionName,
       tags: tagLinks.map(link => link.tag?.name).filter(Boolean) as string[],
     }
   }
 
-  async listCollectionsTree(userId: string | null) {
-    // 登录用户看到「个人集合 + 公共集合」，未登录用户仅看到公共集合
-    const where = userId ? [{ userId }, { isPublic: true }] : [{ isPublic: true }]
+  async listCollectionsTree(userId: string | null, scope: SnippetScope = 'all') {
+    // 作用域语义与 listSnippets 保持一致，否则侧栏集合树与右侧列表会互相打架：
+    // - mine   仅个人集合（未登录 → 空树）
+    // - public 仅公共集合
+    // - all    个人 + 公共（未登录仅公共）
+    if (scope === 'mine' && !userId) {
+      return []
+    }
+
+    const where: FindOptionsWhere<SnippetCollection>[] =
+      scope === 'mine'
+        ? // 与 listSnippets 同口径：个人的 = 归属当前用户且非公共（公共集合归 null 账号）
+          [{ userId: userId ?? undefined, isPublic: false }]
+        : scope === 'public'
+          ? [{ isPublic: true }]
+          : userId
+            ? [{ userId }, { isPublic: true }]
+            : [{ isPublic: true }]
+
     const collections = await this.collectionRepo.find({
       where,
       order: {
@@ -468,9 +542,13 @@ export class KnowledgeSnippetsService {
     }
   }
 
-  async reorderCollections(userId: string, items: ReorderCollectionInput[]) {
+  async reorderCollections(
+    userId: string,
+    items: ReorderCollectionInput[],
+    scope: SnippetScope = 'all',
+  ) {
     if (!Array.isArray(items) || items.length === 0) {
-      return this.listCollectionsTree(userId)
+      return this.listCollectionsTree(userId, scope)
     }
 
     const collections = await this.collectionRepo.find({
@@ -537,7 +615,7 @@ export class KnowledgeSnippetsService {
       }
     })
 
-    return this.listCollectionsTree(userId)
+    return this.listCollectionsTree(userId, scope)
   }
 
   async deleteCollection(userId: string, id: string) {
@@ -644,8 +722,40 @@ export class KnowledgeSnippetsService {
       .leftJoinAndSelect('snippet.tagLinks', 'tagLinks')
       .leftJoinAndSelect('tagLinks.tag', 'tag')
 
-    // 登录用户看到「个人片段 + 公共片段」混合分页列表，未登录用户仅看到公共片段
-    if (userId) {
+    // 数据作用域：
+    // - mine   仅个人（未登录 → 空集），个人工作区 /snippets 用
+    // - public 仅公共，公共代码块库 /library 用
+    // - all    默认「个人 + 公共」混合（未登录仅公共），兼容收藏夹 / 最近浏览等旧调用方
+    const scope = normalizeSnippetScope(query.scope)
+    if (scope === 'mine') {
+      if (userId) {
+        // 「我的」= 我建的片段，**含我自己发布到公共库的**（作者要能管理 / 下架它）。
+        //
+        // ⚠️ 但不能无条件写成 `userId = :userId`：公共片段的归属是**托管账号**（admin），
+        // 而它名下有 3,414 条运营数据 —— 那样 admin 一登录，个人工作区就会被公共库淹没。
+        // 所以按「当前登录者是否托管账号」分流：
+        //   - 是托管账号 → 只看私有片段（公共内容去 /library）；
+        //   - 普通用户   → 自己的全部；托管账号那批数据不满足 `userId = :userId`，
+        //                 天然被排除，不需要额外条件。
+        // 托管账号解析失败时降级为保守策略（只认私有），宁可少显示也不误捞公共数据。
+        const publicOwnerId = await this.resolvePublicOwnerId()
+        const includePublished = Boolean(publicOwnerId) && publicOwnerId !== userId
+
+        if (includePublished) {
+          qb.where('snippet.userId = :userId', { userId })
+        } else {
+          qb.where('snippet.userId = :userId AND snippet.isPublic = :notPublic', {
+            userId,
+            notPublic: false,
+          })
+        }
+      } else {
+        // 未登录没有个人片段：命中恒假条件，返回空集（而不是回退成「公共」）
+        qb.where('1 = 0')
+      }
+    } else if (scope === 'public') {
+      qb.where('snippet.isPublic = :isPublic', { isPublic: true })
+    } else if (userId) {
       qb.where('(snippet.userId = :userId OR snippet.isPublic = :isPublic)', {
         userId,
         isPublic: true,
@@ -754,8 +864,14 @@ export class KnowledgeSnippetsService {
       items.map(item => item.id),
     )
 
+    // 浏览型列表（分页 / 无限滚动）不回传 content 全文以缩小载荷；
+    // 而 `ids` 是一次「就要这几条」的精确请求（最近浏览 / 导出 / 命令面板），保留全文。
+    const includeContent = Boolean(query.ids?.length)
+
     return {
-      items: items.map(item => this.mapSnippet(item, favoriteIds.has(item.id))),
+      items: items.map(item =>
+        this.mapSnippet(item, favoriteIds.has(item.id), includeContent),
+      ),
       total,
       page,
       pageSize,
@@ -859,6 +975,19 @@ export class KnowledgeSnippetsService {
         ? normalizeDescription(payload.description)
         : current.description
 
+    // 已发布片段被改动「内容类字段」后回到待复审：否则作者可以「先发布合规内容、
+    // 通过后再改成违规内容」绕过审核。只改收藏 / 集合归属不触发（那不是内容变更）。
+    // isPublic 特意保持不变 —— 内容继续可见，但会重新出现在管理员队列里待复查。
+    const contentTouched =
+      payload.name !== undefined ||
+      payload.description !== undefined ||
+      payload.content !== undefined ||
+      payload.language !== undefined ||
+      payload.displayAttrs !== undefined ||
+      payload.tags !== undefined
+    const publicationOverride =
+      current.isPublic && contentTouched ? { moderationStatus: 'pending' as const } : {}
+
     await this.dataSource.transaction(async manager => {
       const snippetRepository = manager.getRepository(KnowledgeSnippet)
 
@@ -873,6 +1002,7 @@ export class KnowledgeSnippetsService {
           displayAttrs,
           placeholderDefs,
           favorite,
+          ...publicationOverride,
         } as never,
       )
 
@@ -909,6 +1039,126 @@ export class KnowledgeSnippetsService {
     })
 
     return { ok: true }
+  }
+
+  /**
+   * 提交发布：把私有片段送审（none / rejected → pending）。
+   *
+   * 提交后 `isPublic` **仍为 false** —— 内容要等管理员通过才真正进入公共库。
+   * 语义闸门（标题 / 描述规范）已在创建与更新时拦截，此处不重复校验。
+   */
+  async submitSnippetForPublication(userId: string, id: string) {
+    const snippet = await this.ensureSnippetOwned(userId, id)
+
+    if (snippet.isPublic) {
+      throw new BadRequestException('该片段已在公共代码块库中。')
+    }
+    if (snippet.moderationStatus === 'pending') {
+      throw new BadRequestException('该片段正在审核中，请耐心等待。')
+    }
+
+    await this.snippetRepo.update(
+      { id },
+      // 重新提交时清空上一次的审核结论，避免作者看到过期的拒绝理由
+      { moderationStatus: 'pending', moderationNote: null, moderatedAt: null } as never,
+    )
+
+    return this.getSnippet(userId, id)
+  }
+
+  /**
+   * 取消发布：撤回待审（pending）或下架已发布（approved），一律回到私有。
+   *
+   * 两种场景的终态相同（isPublic = false、moderationStatus = none），
+   * 作者视角都是「不公开了」，故合并为一个动作。
+   */
+  async withdrawSnippetPublication(userId: string, id: string) {
+    const snippet = await this.ensureSnippetOwned(userId, id)
+
+    if (!snippet.isPublic && snippet.moderationStatus !== 'pending') {
+      throw new BadRequestException('该片段当前不在发布流程中。')
+    }
+
+    await this.snippetRepo.update(
+      { id },
+      {
+        isPublic: false,
+        moderationStatus: 'none',
+        moderationNote: null,
+        moderatedAt: null,
+      } as never,
+    )
+
+    return this.getSnippet(userId, id)
+  }
+
+  /**
+   * 审核队列（管理员）。
+   *
+   * ⚠️ 这里**故意不按 userId 过滤** —— 管理员要看的是「所有用户提交的内容」。
+   * 访问控制由控制器层的 `RolesGuard` + `@Roles('admin')` 保证，
+   * 本方法假定调用方已是管理员（service 层不做角色判断，避免权限逻辑两处漂移）。
+   */
+  async listModerationQueue(query: ListModerationQueueDto = {}) {
+    const page = clampPage(query.page)
+    const pageSize = clampPageSize(query.pageSize)
+    const status = query.status ?? 'pending'
+
+    const [items, total] = await this.snippetRepo.findAndCount({
+      where: { moderationStatus: status },
+      relations: ['collection', 'tagLinks', 'tagLinks.tag', 'user'],
+      // 按提交时间排队：提交 / 编辑都会刷新 updatedAt，比 moderatedAt（首次为 null）可靠
+      order: { updatedAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    })
+
+    return {
+      items: items.map(item => ({
+        ...this.mapSnippet(item),
+        // 审核要判断「谁提交的」，列表条目带上作者标识
+        authorName: item.user?.displayName ?? item.user?.username ?? null,
+        authorUsername: item.user?.username ?? null,
+      })),
+      total,
+      page,
+      pageSize,
+    }
+  }
+
+  /**
+   * 审核动作（管理员）：approve → 进公共库；reject → 保持私有并记录原因。
+   *
+   * 只接受处于 `pending` 的片段，避免对同一条内容重复裁决（并发点击 / 过期页面）。
+   */
+  async moderateSnippet(userId: string, id: string, payload: ModerateSnippetDto) {
+    const snippet = await this.snippetRepo.findOne({ where: { id } })
+    if (!snippet) {
+      throw new NotFoundException('代码片段不存在。')
+    }
+    if (snippet.moderationStatus !== 'pending') {
+      throw new BadRequestException('该片段不在待审核状态，可能已被处理。')
+    }
+
+    const approve = payload.action === 'approve'
+    await this.snippetRepo.update(
+      { id },
+      {
+        isPublic: approve,
+        moderationStatus: approve ? 'approved' : 'rejected',
+        moderationNote: payload.note?.trim() || null,
+        moderatedAt: new Date(),
+      } as never,
+    )
+
+    // 不能复用 getSnippet(userId, id)：拒绝后片段仍归**作者**，
+    // 而这里的 userId 是审核的管理员 —— assertSnippetAccessible 会抛 404。
+    const updated = await this.snippetRepo.findOne({
+      where: { id },
+      relations: ['collection', 'tagLinks', 'tagLinks.tag'],
+    })
+
+    return updated ? this.mapSnippet(updated) : null
   }
 
   async recordUse(userId: string | null, id: string) {

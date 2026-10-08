@@ -9,6 +9,7 @@ import { KnowledgeSnippetTag } from '../entities/knowledge-snippet-tag.entity';
 import { KnowledgeSnippetTagLink } from '../entities/knowledge-snippet-tag-link.entity';
 import { SnippetVersion } from '../entities/snippet-version.entity';
 import { FavoritesModule } from '../../favorites/favorites.module';
+import { RolesGuard } from '../../auth/guards/roles.guard';
 
 @Module({
   imports: [
@@ -23,6 +24,6 @@ import { FavoritesModule } from '../../favorites/favorites.module';
     FavoritesModule,
   ],
   controllers: [KnowledgeSnippetsController],
-  providers: [KnowledgeSnippetsService, SnippetVersionService],
+  providers: [KnowledgeSnippetsService, SnippetVersionService, RolesGuard],
 })
 export class KnowledgeSnippetsModule {}

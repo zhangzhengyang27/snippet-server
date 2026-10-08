@@ -41,7 +41,7 @@ export class RateLimitGuard implements CanActivate {
       ]) ?? DEFAULT_OPTIONS;
 
     const request = context.switchToHttp().getRequest<Request>();
-    const key = this.resolveKey(request);
+    const key = this.resolveKey(context, request);
 
     const { count, resetAt } = await this.store.hit(key, options.windowMs);
 
@@ -50,7 +50,7 @@ export class RateLimitGuard implements CanActivate {
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          message: '登录尝试次数过多，请稍后再试',
+          message: options.message ?? '登录尝试次数过多，请稍后再试',
           retryAfter,
         },
         HttpStatus.TOO_MANY_REQUESTS,
@@ -61,12 +61,19 @@ export class RateLimitGuard implements CanActivate {
   }
 
   /**
-   * 限流维度取客户端 IP。
+   * 限流键 = **handler 标识 + 客户端 IP**。
+   *
+   * 🚨 必须带 handler 维度：存储层（`MemoryRateLimitStore` / Redis）只按传入的
+   * key 分桶，**不认识路由**。若只用 IP 作键，同一 IP 下所有挂了 @RateLimit 的
+   * 接口会**共用同一个计数器** —— 实测表现为「3 次注册后登录立刻 429」。
+   * 用「类名.方法名」而非 URL：同类多路由也能自然区分。
    *
    * `req.ip` 在开启 `trust proxy` 后会优先解析 `X-Forwarded-For` 的第一跳；
    * 未开启时它是直连地址 —— 反向代理后所有请求会同 IP，等同于全局限流。
    */
-  private resolveKey(request: Request): string {
-    return request.ip || request.socket?.remoteAddress || 'unknown';
+  private resolveKey(context: ExecutionContext, request: Request): string {
+    const ip = request.ip || request.socket?.remoteAddress || 'unknown';
+    const handler = `${context.getClass().name}.${context.getHandler().name}`;
+    return `${handler}:${ip}`;
   }
 }

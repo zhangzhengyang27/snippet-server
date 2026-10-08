@@ -11,9 +11,10 @@
  */
 import { DataSource } from 'typeorm'
 import { User } from '../src/modules/auth/entities/user.entity'
+import { PUBLIC_OWNER_USERNAME } from '../src/modules/knowledge/snippets/public-owner.util'
 
-/** 公共片段托管账号的用户名 */
-export const PUBLIC_OWNER_USERNAME = 'admin'
+// 常量单一来源在 src 侧，这里转发，避免服务端与脚本各写一份「admin」而漂移。
+export { PUBLIC_OWNER_USERNAME }
 
 /**
  * 解析公共片段托管账号的 id。

@@ -13,7 +13,12 @@
  *
  * 规则与历史清洗口径一致：
  *   标题   非空、≤30 字、不得由语言标识开头（javascript / python / ... 这类机械截取残留）
- *   描述   非空、≥20 字、且与标题不同（也不得是「标题 + 一个句号」）
+ *   描述   非空、≥20 字、且不得只是在复述标题
+ *
+ * ⚠️ 「描述不得只是在复述标题」必须按**归一化后**比对，不能按原始字符串严格相等 ——
+ * 2026-10-07 审计发现，只把标题里的空格换成 `/`、方括号换成圆括号、末尾补个句号，
+ * 就能让 `stores/user.js - Pinia 状态管理。` 绕过 `description === name` 的检查。
+ * 全库当时有 112 条这样"换标点复述标题"的假描述（归一化全等 108 条 + 含标题且剩余不足 10 字 4 条）。
  *
  * `partial` 模式供 PATCH 场景使用：只校验调用方实际传入的字段，避免「只改 title、顺带被要求补描述」。
  */
@@ -22,6 +27,17 @@ export const SNIPPET_METADATA_RULES = {
   nameMaxLength: 30,
   descriptionMinLength: 20,
   descriptionMaxLength: 400,
+  /**
+   * 「描述只是在复述标题」的第二道判据：把标题从描述里剔除后，剩余可用字符少于该值即算违规。
+   *
+   * 覆盖两类绕过写法：
+   *   ① `Redis 键过期与内存管理 TTL 设置与查看。` —— 标题 + 几字尾巴，尾巴本身不含新信息
+   *   ② `支持 HTTP Range 的文件下载：支持 HTTP Range 的文件下载。` —— 标题重复两遍
+   *
+   * 阈值取 10：实测存量 3414 条里该判据只命中上面那 4 条病态数据，
+   * 而 56 条「以标题开头但确实补充了内容」的健康描述剩余均 ≥10 字，不会误伤。
+   */
+  descriptionNameResidueMinLength: 10,
   /**
    * 语言标识词，用于识别「标题尾部残留的语言标签」（如 `xxx（JavaScript）`）。
    *
@@ -80,6 +96,19 @@ const TRAILING_LANGUAGE_TAG_RE = new RegExp(
   'i',
 )
 
+/**
+ * 语义比对用的归一化：转小写 + 去掉所有标点、空白与符号，只保留英文字母、数字与 CJK 汉字。
+ *
+ * 存在的唯一目的是让「描述 vs 标题」的比对不受排版差异干扰 ——
+ * `stores user.js - Pinia 状态管理` 与 `stores/user.js - Pinia 状态管理。`
+ * 归一化后都是 `storesuserjspinia状态管理`，属于同一句话，应当判为违规。
+ *
+ * 前端 `useSnippetEditorForm.ts` 的 `normalizeSnippetMetadataText` 是同一份口径的镜像实现，
+ * 两边必须同步修改，否则会出现「前端放行、提交吃 400」。
+ */
+export const normalizeSnippetMetadataText = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '')
+
 export type SnippetMetadataField = 'name' | 'description'
 
 export interface SnippetMetadataInput {
@@ -97,6 +126,7 @@ export interface SnippetMetadataIssue {
     | 'DESCRIPTION_TOO_SHORT'
     | 'DESCRIPTION_TOO_LONG'
     | 'DESCRIPTION_EQUALS_NAME'
+    | 'DESCRIPTION_MIRRORS_NAME'
   message: string
 }
 
@@ -158,12 +188,30 @@ export const checkSnippetMetadata = (
         message: `描述 ${description.length} 字，超过列上限 ${SNIPPET_METADATA_RULES.descriptionMaxLength} 字`,
       })
     }
-    if (name && (description === name || description === `${name}。`)) {
-      issues.push({
-        field: 'description',
-        code: 'DESCRIPTION_EQUALS_NAME',
-        message: '描述与标题完全相同（或只多个句号），等于没写',
-      })
+    // 与标题的比对一律走归一化（大小写 / 标点 / 空白全部忽略），否则换个标点就能绕过去。
+    // 两种情况分开报错，是为了把「一字不改」和「只重复/加几字尾巴」区分开，提示更准确。
+    if (name && description) {
+      const normalizedName = normalizeSnippetMetadataText(name)
+      const normalizedDescription = normalizeSnippetMetadataText(description)
+      if (normalizedName) {
+        const residue = normalizedDescription.split(normalizedName).join('')
+        if (normalizedDescription === normalizedName) {
+          issues.push({
+            field: 'description',
+            code: 'DESCRIPTION_EQUALS_NAME',
+            message: '描述与标题完全相同（仅大小写、标点或空格不同也算），等于没写',
+          })
+        } else if (
+          normalizedDescription.includes(normalizedName) &&
+          residue.length < SNIPPET_METADATA_RULES.descriptionNameResidueMinLength
+        ) {
+          issues.push({
+            field: 'description',
+            code: 'DESCRIPTION_MIRRORS_NAME',
+            message: `描述只是在重复标题（去掉标题后只剩 ${residue.length} 个字，至少要有 ${SNIPPET_METADATA_RULES.descriptionNameResidueMinLength} 字新信息）`,
+          })
+        }
+      }
     }
   } else if (!partial) {
     issues.push({

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
@@ -28,6 +29,11 @@ function resolveTrustProxy(): boolean | number | string {
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // gzip 压缩：列表 / 详情等 JSON 响应压缩率约 65%~70%（一页列表 29KB → ~9KB），
+  // 对静态代码块的场景收益明显。threshold 设 1KB —— 更小的响应压了反而多几个
+  // 字节的头部开销、得不偿失。压缩由 Accept-Encoding 协商，客户端不支持则原样返回。
+  app.use(compression({ threshold: 1024 }));
 
   app.useGlobalPipes(
     new ValidationPipe({

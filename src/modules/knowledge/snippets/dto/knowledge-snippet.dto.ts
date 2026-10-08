@@ -3,6 +3,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsObject,
@@ -15,6 +16,26 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator'
 import { checkSnippetMetadata } from '../snippet-metadata.util'
+import type { SnippetModerationStatus } from '../../entities/knowledge-snippet.entity'
+
+/**
+ * 片段 / 集合的数据作用域。
+ *
+ * - `mine`：仅当前用户自己的数据（未登录 → 空集）。个人工作区 `/snippets` 用。
+ * - `public`：仅公共数据，登录与否都一样。公共代码块库 `/library` 用。
+ * - `all`（默认）：登录用户为「个人 + 公共」混合，未登录仅公共。
+ *   保持默认值是为了不破坏收藏夹 / 最近浏览 / 首页等既有调用方。
+ */
+export type SnippetScope = 'mine' | 'public' | 'all'
+
+const SNIPPET_SCOPE_VALUES: SnippetScope[] = ['mine', 'public', 'all']
+
+/** 查询字符串 → scope 的收敛：非法值一律回退 `all`，避免静默返回空集。 */
+export function normalizeSnippetScope(value: unknown): SnippetScope {
+  return typeof value === 'string' && (SNIPPET_SCOPE_VALUES as string[]).includes(value)
+    ? (value as SnippetScope)
+    : 'all'
+}
 
 /** 标题 / 描述语义闸门：复用 snippet-metadata.util 的同一套规则，脏数据在写库前就 400。 */
 class IsSnippetMetadataConstraint implements ValidatorConstraintInterface {
@@ -29,7 +50,7 @@ class IsSnippetMetadataConstraint implements ValidatorConstraintInterface {
   }
 
   defaultMessage(): string {
-    return '标题、描述不符合语义规范：标题需非空且 ≤30 字、不得由语言标识开头；描述需非空且 ≥20 字、不能与标题相同'
+    return '标题、描述不符合语义规范：标题需非空且 ≤30 字、不得由语言标识开头；描述需非空且 ≥20 字、不得只是在复述标题（换个标点也算）'
   }
 }
 
@@ -178,6 +199,14 @@ export class ReorderCollectionItemDto {
 export class ReorderSnippetCollectionsDto {
  @IsArray()
  items!: ReorderCollectionItemDto[]
+
+ /**
+  * 重排后返回的树按哪个作用域构建。必须由调用方带上 —— 否则个人工作区拖拽
+  * 完一次排序，返回的却是「个人 + 公共」混合树，侧栏会凭空多出公共集合分支。
+  */
+ @IsOptional()
+ @IsIn(SNIPPET_SCOPE_VALUES)
+ scope?: SnippetScope
 }
 
 export class ListKnowledgeSnippetsDto {
@@ -217,15 +246,35 @@ export class ListKnowledgeSnippetsDto {
  @IsBoolean()
  favorite?: boolean
 
- @IsOptional()
- @IsString()
- sort?: string
+  @IsOptional()
+  @IsString()
+  sort?: string
 
- @IsOptional()
- page?: number
+  /**
+   * 数据作用域，见 `SnippetScope`。默认 `all`（个人 + 公共），
+   * 只有个人工作区与公共库两个页面会显式传 `mine` / `public`。
+   */
+  @IsOptional()
+  @IsIn(SNIPPET_SCOPE_VALUES)
+  scope?: SnippetScope
 
- @IsOptional()
- pageSize?: number
+  @IsOptional()
+  page?: number
+
+  @IsOptional()
+  pageSize?: number
+}
+
+/**
+ * 集合树的查询参数。
+ *
+ * 必须声明成 DTO —— 全局 ValidationPipe 开了 `forbidNonWhitelisted`，
+ * 未在 DTO 里声明的查询参数会直接 400（此前该接口无 DTO，任何参数都进不来）。
+ */
+export class ListSnippetCollectionsQueryDto {
+  @IsOptional()
+  @IsIn(SNIPPET_SCOPE_VALUES)
+  scope?: SnippetScope
 }
 
 /** 批量打标签：ids 为目标片段 id 列表，tag 为要追加的标签名。 */
@@ -247,4 +296,48 @@ export class BatchDeleteDto {
  @ArrayNotEmpty()
  @IsString({ each: true })
  ids!: string[]
+}
+
+// ========== 发布审核 ==========
+
+/** 审核状态取值（与实体的 `SnippetModerationStatus` 保持同一份定义）。 */
+export const SNIPPET_MODERATION_STATUS_VALUES: SnippetModerationStatus[] = [
+  'none',
+  'pending',
+  'approved',
+  'rejected',
+]
+
+/**
+ * 管理员审核动作。
+ *
+ * `approve` → isPublic = true（进入公共库）；`reject` → 保持私有并记录 note，
+ * 作者可在「我的代码块」看到原因、修改后重新提交。
+ */
+export class ModerateSnippetDto {
+  @IsIn(['approve', 'reject'], { message: 'action 必须是 approve 或 reject' })
+  action!: 'approve' | 'reject'
+
+  /** 审核备注：拒绝时作为「未通过原因」返回给作者。 */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string
+}
+
+/**
+ * 待审核队列查询参数。
+ *
+ * 缺省查 `pending`（管理员最常用的入口）；也支持按 `approved` / `rejected` 回看历史。
+ */
+export class ListModerationQueueDto {
+  @IsOptional()
+  @IsIn(SNIPPET_MODERATION_STATUS_VALUES)
+  status?: SnippetModerationStatus
+
+  @IsOptional()
+  page?: number
+
+  @IsOptional()
+  pageSize?: number
 }
