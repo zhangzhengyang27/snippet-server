@@ -3,9 +3,11 @@ services:
     image: postgres:16-alpine
     container_name: snippet-pg
     environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root1234
-      POSTGRES_DB: html5_examples
+      # 口令不写死在版本库里：docker compose 会自动加载同目录 .env，
+      # 因此这里直接引用应用同一套变量；未设置时 compose 会直接报错退出。
+      POSTGRES_USER: ${DB_USERNAME:-root}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD（不要提交到仓库）}
+      POSTGRES_DB: ${DB_NAME:-html5_examples}
     ports:
       - '5433:5432'
     volumes:
