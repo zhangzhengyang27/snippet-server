@@ -11,6 +11,8 @@ import { IsNotEmpty, IsString } from 'class-validator';
 import { Request } from 'express';
 import { FavoritesService } from './favorites.service';
 import { RequireAuthGuard } from '../auth/guards/require-auth.guard';
+import { RateLimitGuard } from '../auth/guards/rate-limit.guard';
+import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
 
 /**
  * 收藏代码块的请求体。
@@ -40,12 +42,16 @@ export class FavoritesController {
   constructor(private readonly favoritesService: FavoritesService) {}
 
   @Post()
+  @RateLimit({ max: 20, windowMs: 60_000 })
+  @UseGuards(RequireAuthGuard, RateLimitGuard)
   async add(@Body() dto: AddFavoriteDto, @Req() req: AuthenticatedRequest) {
     // 空值校验由全局 ValidationPipe 依 AddFavoriteDto 完成
     return this.favoritesService.add(req.user.userId, dto.snippetId);
   }
 
   @Delete(':snippetId')
+  @RateLimit({ max: 20, windowMs: 60_000 })
+  @UseGuards(RequireAuthGuard, RateLimitGuard)
   async remove(
     @Param('snippetId') snippetId: string,
     @Req() req: AuthenticatedRequest,

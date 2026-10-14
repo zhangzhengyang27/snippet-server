@@ -14,6 +14,8 @@ import type { Request } from 'express'
 import { RequireAuthGuard } from '../../auth/guards/require-auth.guard'
 import { RolesGuard } from '../../auth/guards/roles.guard'
 import { Roles } from '../../auth/guards/roles.decorator'
+import { RateLimitGuard } from '../../auth/guards/rate-limit.guard'
+import { RateLimit } from '../../../common/rate-limit/rate-limit.decorator'
 import {
  BatchAddTagDto,
  BatchDeleteDto,
@@ -56,13 +58,15 @@ export class KnowledgeSnippetsController {
  }
 
  @Post('collections')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  createCollection(@Req() request: AuthedRequest, @Body() payload: CreateSnippetCollectionDto) {
    return this.knowledgeSnippetsService.createCollection(request.user!.userId, payload)
  }
 
  @Post('collections/reorder')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  reorderCollections(@Req() request: AuthedRequest, @Body() payload: ReorderSnippetCollectionsDto) {
    return this.knowledgeSnippetsService.reorderCollections(
      request.user!.userId,
@@ -72,7 +76,8 @@ export class KnowledgeSnippetsController {
  }
 
  @Patch('collections/:id')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  updateCollection(
    @Req() request: AuthedRequest,
    @Param('id') id: string,
@@ -82,7 +87,8 @@ export class KnowledgeSnippetsController {
  }
 
  @Delete('collections/:id')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  removeCollection(@Req() request: AuthedRequest, @Param('id') id: string) {
    return this.knowledgeSnippetsService.deleteCollection(request.user!.userId, id)
  }
@@ -116,13 +122,15 @@ export class KnowledgeSnippetsController {
  }
 
  @Post()
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  create(@Req() request: AuthedRequest, @Body() payload: CreateKnowledgeSnippetDto) {
    return this.knowledgeSnippetsService.createSnippet(request.user!.userId, payload)
  }
 
  @Patch(':id')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  update(
    @Req() request: AuthedRequest,
    @Param('id') id: string,
@@ -132,7 +140,8 @@ export class KnowledgeSnippetsController {
  }
 
  @Delete(':id')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  remove(@Req() request: AuthedRequest, @Param('id') id: string) {
    return this.knowledgeSnippetsService.deleteSnippet(request.user!.userId, id)
  }
@@ -164,7 +173,8 @@ export class KnowledgeSnippetsController {
  }
 
  @Delete(':id/versions/:versionId')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  deleteVersion(
    @Req() request: AuthedRequest,
    @Param('id') id: string,
@@ -174,7 +184,8 @@ export class KnowledgeSnippetsController {
  }
 
  @Post(':id/versions/:versionId/rollback')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  rollbackVersion(
    @Req() request: AuthedRequest,
    @Param('id') id: string,
@@ -190,7 +201,8 @@ export class KnowledgeSnippetsController {
  }
 
  @Post(':id/copy')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  copy(@Req() request: AuthedRequest, @Param('id') id: string, @Body() payload: CopySnippetDto) {
    return this.knowledgeSnippetsService.copySnippet(
      request.user!.userId,
@@ -206,7 +218,8 @@ export class KnowledgeSnippetsController {
   * 提交后 isPublic 仍为 false（未上架），前端据 moderationStatus 显示「审核中」。
   */
  @Post(':id/publication')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  submitPublication(@Req() request: AuthedRequest, @Param('id') id: string) {
    return this.knowledgeSnippetsService.submitSnippetForPublication(request.user!.userId, id)
  }
@@ -215,7 +228,8 @@ export class KnowledgeSnippetsController {
   * 取消发布：撤回待审（pending）或下架已发布（approved），一律回到私有。
   */
  @Delete(':id/publication')
- @UseGuards(RequireAuthGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RateLimitGuard)
  withdrawPublication(@Req() request: AuthedRequest, @Param('id') id: string) {
    return this.knowledgeSnippetsService.withdrawSnippetPublication(request.user!.userId, id)
  }
@@ -227,7 +241,8 @@ export class KnowledgeSnippetsController {
   * 用 `@Roles('admin')` 限定角色，非管理员一律 403。
   */
  @Post(':id/moderation')
- @UseGuards(RequireAuthGuard, RolesGuard)
+ @RateLimit({ max: 20, windowMs: 60_000 })
+ @UseGuards(RequireAuthGuard, RolesGuard, RateLimitGuard)
  @Roles('admin')
  moderate(
    @Req() request: AuthedRequest,
@@ -240,13 +255,15 @@ export class KnowledgeSnippetsController {
   // ── 批量操作（8/30 页面契约） ──
 
   @Post('batch/tag')
-  @UseGuards(RequireAuthGuard)
+  @RateLimit({ max: 10, windowMs: 60_000 })
+  @UseGuards(RequireAuthGuard, RateLimitGuard)
   async batchAddTag(@Req() request: AuthedRequest, @Body() body: BatchAddTagDto) {
     return this.knowledgeSnippetsService.batchAddTag(request.user!.userId, body.ids, body.tag)
   }
 
   @Post('batch/delete')
-  @UseGuards(RequireAuthGuard)
+  @RateLimit({ max: 10, windowMs: 60_000 })
+  @UseGuards(RequireAuthGuard, RateLimitGuard)
   async batchDelete(@Req() request: AuthedRequest, @Body() body: BatchDeleteDto) {
     return this.knowledgeSnippetsService.batchDelete(request.user!.userId, body.ids)
   }
