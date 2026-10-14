@@ -9,7 +9,9 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD（不要提交到仓库）}
       POSTGRES_DB: ${DB_NAME:-html5_examples}
     ports:
-      - '5433:5432'
+      # 只绑本机回环：避免这台开发库被同网段或公网访问。
+      # 若确需外部连接，再显式改成 '<你的网卡IP>:5433:5432'，别用 '5433:5432'（默认绑 0.0.0.0）。
+      - '127.0.0.1:5433:5432'
     volumes:
       - snippet_pgdata:/var/lib/postgresql/data
     restart: unless-stopped
